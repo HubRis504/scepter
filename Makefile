@@ -13,7 +13,10 @@ OBJS    = $(BUILD)/boot.o \
           $(BUILD)/cpu.o \
           $(BUILD)/printk.o \
           $(BUILD)/vga.o \
-          $(BUILD)/pic.o
+          $(BUILD)/pic.o \
+          $(BUILD)/isr.o \
+          $(BUILD)/panic.o \
+          $(BUILD)/pit.o
 
 .PHONY: all clean run debug
 
@@ -39,6 +42,15 @@ $(BUILD)/vga.o: driver/vga.c include/vga.h kernel/asm.h
 
 $(BUILD)/pic.o: driver/pic.c include/pic.h kernel/asm.h
 	$(CC) $(CFLAGS) -c driver/pic.c -o $@
+
+$(BUILD)/isr.o: kernel/isr.s
+	$(AS) kernel/isr.s -o $@
+
+$(BUILD)/panic.o: kernel/panic.c include/panic.h include/printk.h kernel/asm.h
+	$(CC) $(CFLAGS) -c kernel/panic.c -o $@
+
+$(BUILD)/pit.o: driver/pit.c include/pit.h include/pic.h include/cpu.h kernel/asm.h
+	$(CC) $(CFLAGS) -c driver/pit.c -o $@
 
 $(TARGET): $(OBJS)
 	$(LD) $(LDFLAGS) -o $@ $(OBJS) $(LIBGCC)
