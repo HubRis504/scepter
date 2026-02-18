@@ -2,6 +2,7 @@ AS      = i686-linux-gnu-as
 CC      = i686-linux-gnu-gcc
 LD      = i686-linux-gnu-ld
 CFLAGS  = -ffreestanding -O2 -Wall -Wextra -I include -I kernel
+LIBGCC  = $(shell i686-linux-gnu-gcc -print-libgcc-file-name)
 LDFLAGS = -T linker.ld -nostdlib
 
 BUILD   = build
@@ -11,7 +12,8 @@ OBJS    = $(BUILD)/boot.o \
           $(BUILD)/kernel.o \
           $(BUILD)/cpu.o \
           $(BUILD)/printk.o \
-          $(BUILD)/vga.o
+          $(BUILD)/vga.o \
+          $(BUILD)/pic.o
 
 .PHONY: all clean run debug
 
@@ -35,8 +37,11 @@ $(BUILD)/printk.o: kernel/printk.c include/printk.h include/vga.h
 $(BUILD)/vga.o: driver/vga.c include/vga.h kernel/asm.h
 	$(CC) $(CFLAGS) -c driver/vga.c -o $@
 
+$(BUILD)/pic.o: driver/pic.c include/pic.h kernel/asm.h
+	$(CC) $(CFLAGS) -c driver/pic.c -o $@
+
 $(TARGET): $(OBJS)
-	$(LD) $(LDFLAGS) -o $@ $(OBJS)
+	$(LD) $(LDFLAGS) -o $@ $(OBJS) $(LIBGCC)
 
 run: $(TARGET)
 	qemu-system-i386 -kernel $(TARGET)

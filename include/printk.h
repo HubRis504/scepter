@@ -1,7 +1,10 @@
 #ifndef PRINTK_H
 #define PRINTK_H
 
-/* Plain-text kernel print (format support to be added later) */
-void printk(const char *str);
+#include <stdarg.h>
+
+/* printf-style kernel print – outputs via vga_putchar */
+void printk(const char *fmt, ...);
+void vprintk(const char *fmt, va_list args);
 
 #endif /* PRINTK_H */
