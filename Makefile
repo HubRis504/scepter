@@ -1,12 +1,14 @@
 AS      = i686-linux-gnu-as
 CC      = i686-linux-gnu-gcc
 LD      = i686-linux-gnu-ld
-CFLAGS  = -ffreestanding -O2 -Wall -Wextra -I include -I kernel
+CFLAGS  = -ffreestanding -O2 -Wall -Wextra -I include -I kernel -ggdb
 LIBGCC  = $(shell i686-linux-gnu-gcc -print-libgcc-file-name)
 LDFLAGS = -T linker.ld -nostdlib
 
-BUILD   = build
-TARGET  = $(BUILD)/kernel.bin
+BUILD      = build
+TARGET     = $(BUILD)/kernel.bin
+IMAGE      = $(BUILD)/disk.img
+MOUNT_DIR  = /mnt/scepter
 
 OBJS    = $(BUILD)/boot.o \
           $(BUILD)/kernel.o \
@@ -18,7 +20,9 @@ OBJS    = $(BUILD)/boot.o \
           $(BUILD)/panic.o \
           $(BUILD)/pit.o
 
-.PHONY: all clean run debug
+.PHONY: all clean init mount umount install run debug
+
+# ── Build ────────────────────────────────────────────────────────────────────
 
 all: $(BUILD) $(TARGET)
 
@@ -55,12 +59,38 @@ $(BUILD)/pit.o: driver/pit.c include/pit.h include/pic.h include/cpu.h kernel/as
 $(TARGET): $(OBJS)
 	$(LD) $(LDFLAGS) -o $@ $(OBJS) $(LIBGCC)
 
-run: $(TARGET)
-	qemu-system-i386 -kernel $(TARGET)
+# ── Disk image management ────────────────────────────────────────────────────
 
-debug: $(TARGET)
-	qemu-system-i386 -kernel $(TARGET) -s -S &
+# One-time: create disk image, partition, format FAT32, install GRUB
+init:
+	sudo bash scripts/init.sh
+
+# Mount the image partition at /mnt/scepter
+mount:
+	sudo bash scripts/mount.sh
+
+# Unmount and detach loop device
+umount:
+	sudo bash scripts/umount.sh
+
+# Copy freshly built kernel into the mounted image and flush to disk
+install: $(TARGET)
+	sudo cp $(TARGET) $(MOUNT_DIR)/boot/kernel.bin
+	sudo sync
+	@echo "[install] kernel.bin deployed to $(MOUNT_DIR)/boot/"
+
+# ── QEMU ─────────────────────────────────────────────────────────────────────
+
+# Boot from disk image (image must be init'd; kernel must be install'd)
+run:
+	qemu-system-i386 -drive file=$(IMAGE),format=raw
+
+# Debug: start QEMU suspended, attach GDB
+debug:
+	qemu-system-i386 -drive file=$(IMAGE),format=raw -s -S &
 	gdb $(TARGET) -ex "target remote :1234"
+
+# ── Clean ─────────────────────────────────────────────────────────────────────
 
 clean:
 	rm -rf $(BUILD)

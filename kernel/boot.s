@@ -17,9 +17,11 @@ stack_bottom:
 stack_top:
 
 /* -----------------------------------------------------------------------
- * Boot entry – runs at physical address (paging not yet enabled)
+ * Boot entry – linked and loaded at physical 0x00100000.
+ * Placed in .boot so linker.ld can give it a low VMA == LMA,
+ * making the ELF e_entry a valid physical address for GRUB.
  * ----------------------------------------------------------------------- */
-.section .text
+.section .boot
 .global _start
 _start:
     /* ---- Build PSE page directory at physical 0x0 ---- */
@@ -34,9 +36,13 @@ _start:
      * Entry 0   → identity map 0x00000000 (needed while IP is still low)
      * Entry 768 → higher-half  0xC0000000 → phys 0x00000000
      * Flags: Present(0) | Writable(1) | PSE/4MB(7) = 0x83
+     *
+     * rep stosl left %edi = 0x1000; reload to page directory base before
+     * writing PDEs so the stores use valid protected-mode addresses.
      */
-    movl  $0x00000083, 0x000          /* PDE[0]   = 0x00000000 | PSE */
-    movl  $0x00000083, 0xC00          /* PDE[768] = 0x00000000 | PSE  (768*4 = 0xC00) */
+    movl  $0x0, %edi
+    movl  $0x00000083, (%edi)         /* PDE[0]   = 0x00000000 | PSE */
+    movl  $0x00000083, 0xC00(%edi)    /* PDE[768] = 0x00000000 | PSE  (768*4 = 0xC00) */
 
     /* ---- Load CR3 with page directory physical address ---- */
     movl  $0x0, %eax
@@ -58,9 +64,11 @@ _start:
 /* -----------------------------------------------------------------------
  * Now running at virtual 0xC0xxxxxx
  * ----------------------------------------------------------------------- */
+.section .text
 _start_higher:
-    /* Remove identity mapping (entry 0) */
-    movl  $0x0, 0x000
+    /* Remove identity mapping (entry 0) – use register to avoid absolute addr */
+    movl  $0x0, %eax
+    movl  %eax, (%eax)    /* write 0 to physical 0x0 (PDE[0]) */
 
     /* Flush TLB by reloading CR3 */
     movl  %cr3, %eax
