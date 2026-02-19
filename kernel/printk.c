@@ -1,5 +1,5 @@
 #include "printk.h"
-#include "vga.h"
+#include "driver.h"
 #include <stdint.h>
 
 /* =========================================================================
@@ -24,6 +24,8 @@
 
 static void put_char(char c)
 {
+    /* Temporarily use vga_putchar directly for debugging */
+    extern void vga_putchar(char);
     vga_putchar(c);
 }
 

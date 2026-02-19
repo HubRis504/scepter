@@ -2,6 +2,7 @@
 #include "pic.h"
 #include "cpu.h"
 #include "printk.h"
+#include "driver.h"
 #include "asm.h"
 
 /* =========================================================================
@@ -54,4 +55,32 @@ void pit_init(uint32_t hz)
 
     /* Unmask IRQ0 in the PIC */
     pic_enable_irq(IRQ0);
+}
+
+/* =========================================================================
+ * Driver Layer Integration
+ * ========================================================================= */
+
+static char pit_read(int scnd_id)
+{
+    /* Return low byte of tick counter */
+    (void)scnd_id;
+    return (char)(pit_ticks & 0xFF);
+}
+
+static int pit_write(int scnd_id, char c)
+{
+    /* Writing to PIT does nothing */
+    (void)scnd_id;
+    (void)c;
+    return 0;
+}
+
+int pit_register_driver(void)
+{
+    char_ops_t ops = {
+        .read = pit_read,
+        .write = pit_write
+    };
+    return register_char_device(1, &ops);
 }

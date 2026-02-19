@@ -5,6 +5,7 @@
 #include "pit.h"
 #include "buddy.h"
 #include "slab.h"
+#include "driver.h"
 #include "asm.h"
 
 /* =========================================================================
@@ -62,9 +63,9 @@ void kernel_main(void)
     idt_init();
     isr_init();
     pic_init(0x20, 0x28);
+    
+    /* Initialize VGA hardware and clear screen FIRST */
     vga_init();
-    pit_init(100);
-    sti();
 
     printk("Scepter i386 Kernel\n\n");
 
@@ -125,8 +126,17 @@ void kernel_main(void)
     
     /* Initialize slab allocator */
     slab_init();
+    
+    /* Initialize driver subsystem and register devices */
+    driver_init();
+    vga_register_driver();
+    pit_init(100);
+    pit_register_driver();
 
     printk("Kernel initialization complete.\n\n");
+    
+    /* Enable interrupts after all initialization is complete */
+    sti();
 
     while(1);
 }

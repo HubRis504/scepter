@@ -1,4 +1,5 @@
 #include "vga.h"
+#include "driver.h"
 #include "asm.h"
 
 /* =========================================================================
@@ -127,4 +128,31 @@ void vga_init(void)
 {
     vga_color = vga_entry_color(VGA_LIGHT_GREY, VGA_BLACK);
     vga_clear();
+}
+
+/* =========================================================================
+ * Driver Layer Integration
+ * ========================================================================= */
+
+static char vga_read(int scnd_id)
+{
+    /* VGA doesn't support reading */
+    (void)scnd_id;
+    return 0;
+}
+
+static int vga_write(int scnd_id, char c)
+{
+    (void)scnd_id;
+    vga_putchar(c);
+    return 0;
+}
+
+int vga_register_driver(void)
+{
+    char_ops_t ops = {
+        .read = vga_read,
+        .write = vga_write
+    };
+    return register_char_device(0, &ops);
 }

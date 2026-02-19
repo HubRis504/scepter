@@ -18,7 +18,8 @@ OBJS    = $(BUILD)/boot.o \
           $(BUILD)/panic.o \
           $(BUILD)/pit.o \
           $(BUILD)/buddy.o \
-          $(BUILD)/slab.o
+          $(BUILD)/slab.o \
+          $(BUILD)/driver.o
 
 .PHONY: all clean run debug
 
@@ -39,8 +40,11 @@ $(BUILD)/cpu.o: kernel/cpu.c include/cpu.h kernel/asm.h
 $(BUILD)/printk.o: kernel/printk.c include/printk.h include/vga.h
 	$(CC) $(CFLAGS) -c kernel/printk.c -o $@
 
-$(BUILD)/vga.o: driver/vga.c include/vga.h kernel/asm.h
-	$(CC) $(CFLAGS) -c driver/vga.c -o $@
+$(BUILD)/vga.o: driver/char/vga.c include/vga.h kernel/asm.h
+	$(CC) $(CFLAGS) -c driver/char/vga.c -o $@
+
+$(BUILD)/driver.o: driver/driver.c include/driver.h include/slab.h
+	$(CC) $(CFLAGS) -c driver/driver.c -o $@
 
 $(BUILD)/pic.o: driver/pic.c include/pic.h kernel/asm.h
 	$(CC) $(CFLAGS) -c driver/pic.c -o $@
@@ -51,8 +55,8 @@ $(BUILD)/isr.o: kernel/isr.s
 $(BUILD)/panic.o: kernel/panic.c include/panic.h include/printk.h kernel/asm.h
 	$(CC) $(CFLAGS) -c kernel/panic.c -o $@
 
-$(BUILD)/pit.o: driver/pit.c include/pit.h include/pic.h include/cpu.h kernel/asm.h
-	$(CC) $(CFLAGS) -c driver/pit.c -o $@
+$(BUILD)/pit.o: driver/char/pit.c include/pit.h include/pic.h include/cpu.h include/driver.h kernel/asm.h
+	$(CC) $(CFLAGS) -c driver/char/pit.c -o $@
 
 $(BUILD)/buddy.o: mm/buddy.c include/buddy.h include/printk.h
 	$(CC) $(CFLAGS) -c mm/buddy.c -o $@
