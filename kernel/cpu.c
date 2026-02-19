@@ -133,17 +133,19 @@ void isr_init(void)
 /*
  * Static pool of page tables.  Each page table is 4 KB (1024 x 4-byte PTEs).
  * We pre-allocate enough tables to cover the address space we care about.
- * Adjust PT_POOL_SIZE as the kernel grows.
+ * Each page table covers 4 MB (1024 pages * 4 KB).
+ * PT_POOL_SIZE = 128 supports up to 512 MB of mapped memory.
  */
-#define PT_POOL_SIZE 16
+#define PT_POOL_SIZE 128
 
 static pte_t pt_pool[PT_POOL_SIZE][1024] __attribute__((aligned(4096)));
 static int   pt_pool_used = 0;
 
 static pte_t *alloc_page_table(void)
 {
-    if (pt_pool_used >= PT_POOL_SIZE)
-        return NULL;   /* out of static pool - panic in a real kernel */
+    if (pt_pool_used >= PT_POOL_SIZE) {
+        return NULL;   /* out of static pool */
+    }
     pte_t *pt = pt_pool[pt_pool_used++];
     /* zero the new table */
     for (int i = 0; i < 1024; i++)
@@ -164,7 +166,11 @@ void map_page(pde_t *page_dir, uint32_t virt, uint32_t phys, uint32_t flags)
         pt = (pte_t *)((page_dir[pdi] & ~0xFFF) + 0xC0000000);
     } else {
         pt = alloc_page_table();
-        if (!pt) return;   /* allocation failed */
+        if (!pt) {
+            /* Out of page tables - this is a critical error */
+            extern void panic(const char *msg);
+            panic("Out of page tables in map_page()");
+        }
         /* The page table pool lives in .bss (virtual 0xC01xxxxx).
          * Subtract KERNEL_VMA to get the physical address for the PDE. */
         page_dir[pdi] = ((uint32_t)pt - 0xC0000000) | PAGE_PRESENT | PAGE_WRITE;

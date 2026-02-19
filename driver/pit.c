@@ -23,9 +23,9 @@ void pit_isr(void)
 {
     pit_ticks++;
 
-    if (pit_ticks % 100 == 0)
-        printk("[PIT] tick %u (uptime ~%u s)\n",
-               pit_ticks, pit_ticks / 100);
+    // if (pit_ticks % 100 == 0)
+    //     printk("[PIT] tick %u (uptime ~%u s)\n",
+    //            pit_ticks, pit_ticks / 100);
 
     pic_send_eoi(IRQ0);
 }

@@ -16,7 +16,8 @@ OBJS    = $(BUILD)/boot.o \
           $(BUILD)/pic.o \
           $(BUILD)/isr.o \
           $(BUILD)/panic.o \
-          $(BUILD)/pit.o
+          $(BUILD)/pit.o \
+          $(BUILD)/buddy.o
 
 .PHONY: all clean run debug
 
@@ -28,7 +29,7 @@ $(BUILD):
 $(BUILD)/boot.o: kernel/boot.s
 	$(AS) kernel/boot.s -o $@
 
-$(BUILD)/kernel.o: kernel/kernel.c
+$(BUILD)/kernel.o: kernel/kernel.c include/multiboot.h
 	$(CC) $(CFLAGS) -c kernel/kernel.c -o $@
 
 $(BUILD)/cpu.o: kernel/cpu.c include/cpu.h kernel/asm.h
@@ -52,14 +53,17 @@ $(BUILD)/panic.o: kernel/panic.c include/panic.h include/printk.h kernel/asm.h
 $(BUILD)/pit.o: driver/pit.c include/pit.h include/pic.h include/cpu.h kernel/asm.h
 	$(CC) $(CFLAGS) -c driver/pit.c -o $@
 
+$(BUILD)/buddy.o: mm/buddy.c include/buddy.h include/printk.h
+	$(CC) $(CFLAGS) -c mm/buddy.c -o $@
+
 $(TARGET): $(OBJS)
 	$(LD) $(LDFLAGS) -o $@ $(OBJS) $(LIBGCC)
 
 run: $(TARGET)
-	qemu-system-i386 -kernel $(TARGET)
+	qemu-system-i386 -m 4096 -kernel $(TARGET)
 
 debug: $(TARGET)
-	qemu-system-i386 -kernel $(TARGET) -s -S &
+	qemu-system-i386 -m 4096 -kernel $(TARGET) -s -S &
 	gdb $(TARGET) -ex "target remote :1234"
 
 clean:
