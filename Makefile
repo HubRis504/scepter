@@ -19,7 +19,8 @@ OBJS    = $(BUILD)/boot.o \
           $(BUILD)/pit.o \
           $(BUILD)/buddy.o \
           $(BUILD)/slab.o \
-          $(BUILD)/driver.o
+          $(BUILD)/driver.o \
+          $(BUILD)/tty.o
 
 .PHONY: all clean run debug
 
@@ -45,6 +46,9 @@ $(BUILD)/vga.o: driver/char/vga.c include/vga.h kernel/asm.h
 
 $(BUILD)/driver.o: driver/driver.c include/driver.h include/slab.h
 	$(CC) $(CFLAGS) -c driver/driver.c -o $@
+
+$(BUILD)/tty.o: driver/char/tty.c include/tty.h include/vga.h include/driver.h
+	$(CC) $(CFLAGS) -c driver/char/tty.c -o $@
 
 $(BUILD)/pic.o: driver/pic.c include/pic.h kernel/asm.h
 	$(CC) $(CFLAGS) -c driver/pic.c -o $@

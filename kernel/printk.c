@@ -22,23 +22,38 @@
  * Low-level output
  * ========================================================================= */
 
-static void put_char(char c)
+static void put_char_early(char c)
 {
-    /* Temporarily use vga_putchar directly for debugging */
+    /* Direct VGA access for early boot */
     extern void vga_putchar(char);
     vga_putchar(c);
 }
 
-static void put_str(const char *s, int len)
+static void put_char(char c)
 {
-    for (int i = 0; i < len; i++)
-        put_char(s[i]);
+    /* Use driver abstraction layer - TTY device (ID 2) */
+    extern int cwrite(int, int, char);
+    cwrite(2, 0, c);
 }
 
-static void put_pad(char pad_char, int n)
+static void put_str(const char *s, int len, int use_early)
 {
-    for (int i = 0; i < n; i++)
-        put_char(pad_char);
+    for (int i = 0; i < len; i++) {
+        if (use_early)
+            put_char_early(s[i]);
+        else
+            put_char(s[i]);
+    }
+}
+
+static void put_pad(char pad_char, int n, int use_early)
+{
+    for (int i = 0; i < n; i++) {
+        if (use_early)
+            put_char_early(pad_char);
+        else
+            put_char(pad_char);
+    }
 }
 
 /* =========================================================================
@@ -73,7 +88,7 @@ static char *uint_to_str(unsigned long long val, int base, int upper,
  * ========================================================================= */
 
 static void print_int(unsigned long long uval, int flags, int width,
-                       int prec, int base)
+                       int prec, int base, int use_early)
 {
     char buf[INT_BUF_SIZE];
     char *buf_end = buf + INT_BUF_SIZE;
@@ -122,27 +137,30 @@ static void print_int(unsigned long long uval, int flags, int width,
 
     /* Emit: [spaces] sign prefix [zeros] digits [spaces] */
     if (!(flags & FL_LEFT) && pad_char == ' ')
-        put_pad(' ', pad);
+        put_pad(' ', pad, use_early);
 
-    if (sign)        put_char(sign);
-    if (prefix_len)  put_str(prefix, prefix_len);
+    if (sign) {
+        if (use_early) put_char_early(sign);
+        else put_char(sign);
+    }
+    if (prefix_len)  put_str(prefix, prefix_len, use_early);
 
     if (!(flags & FL_LEFT) && pad_char == '0')
-        put_pad('0', pad);
+        put_pad('0', pad, use_early);
 
     /* Leading zeros for precision */
-    put_pad('0', num_digits - num_len);
-    put_str(num_start, num_len);
+    put_pad('0', num_digits - num_len, use_early);
+    put_str(num_start, num_len, use_early);
 
     if (flags & FL_LEFT)
-        put_pad(' ', pad);
+        put_pad(' ', pad, use_early);
 }
 
 /* =========================================================================
  * Print a string with width/precision support
  * ========================================================================= */
 
-static void print_str(const char *s, int flags, int width, int prec)
+static void print_str(const char *s, int flags, int width, int prec, int use_early)
 {
     if (!s) s = "(null)";
 
@@ -153,20 +171,23 @@ static void print_str(const char *s, int flags, int width, int prec)
 
     int pad = (width > len) ? (width - len) : 0;
 
-    if (!(flags & FL_LEFT)) put_pad(' ', pad);
-    put_str(s, len);
-    if (flags & FL_LEFT)    put_pad(' ', pad);
+    if (!(flags & FL_LEFT)) put_pad(' ', pad, use_early);
+    put_str(s, len, use_early);
+    if (flags & FL_LEFT)    put_pad(' ', pad, use_early);
 }
 
 /* =========================================================================
  * Core variadic formatter
  * ========================================================================= */
 
-void vprintk(const char *fmt, va_list args)
+static void vprintk_internal(const char *fmt, va_list args, int use_early)
 {
     for (; *fmt; fmt++) {
         if (*fmt != '%') {
-            put_char(*fmt);
+            if (use_early)
+                put_char_early(*fmt);
+            else
+                put_char(*fmt);
             continue;
         }
 
@@ -226,16 +247,17 @@ void vprintk(const char *fmt, va_list args)
             {
                 char c = (char)va_arg(args, int);
                 int pad = (width > 1) ? (width - 1) : 0;
-                if (!(flags & FL_LEFT)) put_pad(' ', pad);
-                put_char(c);
-                if (flags & FL_LEFT)    put_pad(' ', pad);
+                if (!(flags & FL_LEFT)) put_pad(' ', pad, use_early);
+                if (use_early) put_char_early(c);
+                else put_char(c);
+                if (flags & FL_LEFT)    put_pad(' ', pad, use_early);
             }
             break;
 
         case 's':
             {
                 const char *s = va_arg(args, const char *);
-                print_str(s, flags, width, prec);
+                print_str(s, flags, width, prec, use_early);
             }
             break;
 
@@ -247,7 +269,7 @@ void vprintk(const char *fmt, va_list args)
                 else if (flags & FL_LONG)  val = va_arg(args, long);
                 else                       val = va_arg(args, int);
                 print_int((unsigned long long)val,
-                          flags | FL_SIGNED, width, prec, 10);
+                          flags | FL_SIGNED, width, prec, 10, use_early);
             }
             break;
 
@@ -257,7 +279,7 @@ void vprintk(const char *fmt, va_list args)
                 if      (flags & FL_LLONG) val = va_arg(args, unsigned long long);
                 else if (flags & FL_LONG)  val = va_arg(args, unsigned long);
                 else                       val = va_arg(args, unsigned int);
-                print_int(val, flags, width, prec, 10);
+                print_int(val, flags, width, prec, 10, use_early);
             }
             break;
 
@@ -267,7 +289,7 @@ void vprintk(const char *fmt, va_list args)
                 if      (flags & FL_LLONG) val = va_arg(args, unsigned long long);
                 else if (flags & FL_LONG)  val = va_arg(args, unsigned long);
                 else                       val = va_arg(args, unsigned int);
-                print_int(val, flags, width, prec, 16);
+                print_int(val, flags, width, prec, 16, use_early);
             }
             break;
 
@@ -277,7 +299,7 @@ void vprintk(const char *fmt, va_list args)
                 if      (flags & FL_LLONG) val = va_arg(args, unsigned long long);
                 else if (flags & FL_LONG)  val = va_arg(args, unsigned long);
                 else                       val = va_arg(args, unsigned int);
-                print_int(val, flags | FL_UPPER, width, prec, 16);
+                print_int(val, flags | FL_UPPER, width, prec, 16, use_early);
             }
             break;
 
@@ -287,7 +309,7 @@ void vprintk(const char *fmt, va_list args)
                 if      (flags & FL_LLONG) val = va_arg(args, unsigned long long);
                 else if (flags & FL_LONG)  val = va_arg(args, unsigned long);
                 else                       val = va_arg(args, unsigned int);
-                print_int(val, flags, width, prec, 8);
+                print_int(val, flags, width, prec, 8, use_early);
             }
             break;
 
@@ -297,26 +319,50 @@ void vprintk(const char *fmt, va_list args)
                 /* Always print as 0x + lowercase hex, field width 10 (32-bit) */
                 flags |= FL_HASH;
                 if (width == 0) width = 10;
-                print_int((unsigned long long)val, flags, width, prec, 16);
+                print_int((unsigned long long)val, flags, width, prec, 16, use_early);
             }
             break;
 
         case '%':
-            put_char('%');
+            if (use_early) put_char_early('%');
+            else put_char('%');
             break;
 
         default:
             /* Unknown specifier: emit literally */
-            put_char('%');
-            put_char(*fmt);
+            if (use_early) {
+                put_char_early('%');
+                put_char_early(*fmt);
+            } else {
+                put_char('%');
+                put_char(*fmt);
+            }
             break;
         }
     }
 }
 
 /* =========================================================================
- * Public entry point
+ * Public entry points
  * ========================================================================= */
+
+void vprintk_early(const char *fmt, va_list args)
+{
+    vprintk_internal(fmt, args, 1);
+}
+
+void printk_early(const char *fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    vprintk_early(fmt, args);
+    va_end(args);
+}
+
+void vprintk(const char *fmt, va_list args)
+{
+    vprintk_internal(fmt, args, 0);
+}
 
 void printk(const char *fmt, ...)
 {

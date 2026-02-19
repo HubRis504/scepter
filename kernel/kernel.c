@@ -1,5 +1,6 @@
 #include "cpu.h"
 #include "vga.h"
+#include "tty.h"
 #include "printk.h"
 #include "pic.h"
 #include "pit.h"
@@ -67,13 +68,13 @@ void kernel_main(void)
     /* Initialize VGA hardware and clear screen FIRST */
     vga_init();
 
-    printk("Scepter i386 Kernel\n\n");
+    printk_early("Scepter i386 Kernel\n\n");
 
     /* ------------------------------------------------------------------
      * Detect memory size via CMOS
      * ------------------------------------------------------------------ */
     mem_total_kb = detect_memory_cmos();
-    printk("[MEM] Detected %u KB (%u MB) via CMOS\n",
+    printk_early("[MEM] Detected %u KB (%u MB) via CMOS\n",
            mem_total_kb, mem_total_kb / 1024);
 
     /* ------------------------------------------------------------------
@@ -86,9 +87,9 @@ void kernel_main(void)
     uint32_t kernel_end_phys = (uint32_t)kernel_end - KERNEL_VMA;
     mem_first_free_phys = (kernel_end_phys + 0xFFF) & ~0xFFFU;  /* page-align up */
 
-    printk("[MEM] kernel image end: phys=0x%08x  virt=0x%08x\n",
+    printk_early("[MEM] kernel image end: phys=0x%08x  virt=0x%08x\n",
            kernel_end_phys, (uint32_t)kernel_end);
-    printk("[MEM] first free page:  phys=0x%08x\n\n",
+    printk_early("[MEM] first free page:  phys=0x%08x\n\n",
            mem_first_free_phys);
 
     /* ------------------------------------------------------------------
@@ -111,15 +112,15 @@ void kernel_main(void)
     /* Start from first free page after kernel (guaranteed >= 1MB) */
     uint32_t buddy_mem_kb = (max_phys - mem_first_free_phys) / 1024;
     
-    printk("[MEM] Pre-mapped region: phys 0x00000000-0x3FFFFFFF (1 GB)\n");
-    printk("[MEM] Detected RAM: %u KB (%u MB)\n", 
+    printk_early("[MEM] Pre-mapped region: phys 0x00000000-0x3FFFFFFF (1 GB)\n");
+    printk_early("[MEM] Detected RAM: %u KB (%u MB)\n", 
            mem_total_kb, mem_total_kb / 1024);
-    printk("[MEM] Usable limit: phys 0x%08x (%u MB)\n",
+    printk_early("[MEM] Usable limit: phys 0x%08x (%u MB)\n",
            max_phys, max_phys / (1024 * 1024));
-    printk("[MEM] Low memory (0-1MB): RESERVED, not used\n");
-    printk("[MEM] Buddy allocator range: phys 0x%08x-0x%08x\n",
+    printk_early("[MEM] Low memory (0-1MB): RESERVED, not used\n");
+    printk_early("[MEM] Buddy allocator range: phys 0x%08x-0x%08x\n",
            mem_first_free_phys, max_phys);
-    printk("[MEM] Buddy allocator memory: %u KB (%u MB)\n\n",
+    printk_early("[MEM] Buddy allocator memory: %u KB (%u MB)\n\n",
            buddy_mem_kb, buddy_mem_kb / 1024);
     
     buddy_init(mem_first_free_phys, buddy_mem_kb);
@@ -130,6 +131,11 @@ void kernel_main(void)
     /* Initialize driver subsystem and register devices */
     driver_init();
     vga_register_driver();
+    
+    /* Initialize TTY after VGA */
+    tty_init();
+    tty_register_driver();
+    
     pit_init(100);
     pit_register_driver();
 

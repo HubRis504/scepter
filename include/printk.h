@@ -3,7 +3,11 @@
 
 #include <stdarg.h>
 
-/* printf-style kernel print – outputs via vga_putchar */
+/* Early printk - uses direct VGA access (before driver layer is ready) */
+void printk_early(const char *fmt, ...);
+void vprintk_early(const char *fmt, va_list args);
+
+/* Regular printk - uses driver abstraction layer */
 void printk(const char *fmt, ...);
 void vprintk(const char *fmt, va_list args);
 
