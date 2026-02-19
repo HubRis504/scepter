@@ -3,7 +3,7 @@ CC      = i686-linux-gnu-gcc
 LD      = i686-linux-gnu-ld
 CFLAGS  = -ffreestanding -O2 -Wall -Wextra -I include -I kernel
 LIBGCC  = $(shell i686-linux-gnu-gcc -print-libgcc-file-name)
-LDFLAGS = -T linker.ld -nostdlib
+LDFLAGS = -T linker.ld -nostdlib -Map=kernel.sym
 
 BUILD   = build
 TARGET  = $(BUILD)/kernel.bin
