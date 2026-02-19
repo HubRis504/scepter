@@ -73,7 +73,12 @@ static uint32_t order_from_size(size_t size)
     /* Round up to page size */
     uint32_t pages = (size + PAGE_SIZE - 1) >> PAGE_SHIFT;
     
-    /* Find the order (power of 2) */
+    /* Special case: 0 or 1 page needs order 0 */
+    if (pages <= 1) {
+        return 0;
+    }
+    
+    /* Find the order (power of 2 pages) */
     uint32_t order = 0;
     uint32_t p = 1;
     while (p < pages && order < MAX_ORDER) {
@@ -214,8 +219,6 @@ void buddy_init(uint32_t base_phys, uint32_t total_kb)
         buddy.free_pages += (1 << order);
         curr_phys += size;
     }
-    
-    printk("[BUDDY] Initialized: %u pages available\n", buddy.free_pages);
 }
 
 /* =========================================================================
@@ -229,7 +232,6 @@ void *page_alloc(size_t size)
     uint32_t order = order_from_size(size);
     
     if (order > MAX_ORDER) {
-        printk("[BUDDY] Allocation too large: %u bytes (order %u)\n", size, order);
         return NULL;
     }
     
@@ -240,7 +242,6 @@ void *page_alloc(size_t size)
     }
     
     if (curr_order > MAX_ORDER) {
-        printk("[BUDDY] Out of memory (requested %u bytes, order %u)\n", size, order);
         return NULL;
     }
     
@@ -253,7 +254,6 @@ void *page_alloc(size_t size)
     /* Allocate block from the free list */
     free_block_t *block = buddy.free_lists[order];
     if (!block) {
-        printk("[BUDDY] Internal error: expected block at order %u\n", order);
         return NULL;
     }
     
@@ -282,7 +282,6 @@ void page_free(void *addr)
     
     /* Validate address is within managed range */
     if (phys < buddy.base_phys) {
-        printk("[BUDDY] Invalid free: address 0x%08x below base\n", phys);
         return;
     }
     

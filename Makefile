@@ -17,7 +17,8 @@ OBJS    = $(BUILD)/boot.o \
           $(BUILD)/isr.o \
           $(BUILD)/panic.o \
           $(BUILD)/pit.o \
-          $(BUILD)/buddy.o
+          $(BUILD)/buddy.o \
+          $(BUILD)/slab.o
 
 .PHONY: all clean run debug
 
@@ -56,11 +57,14 @@ $(BUILD)/pit.o: driver/pit.c include/pit.h include/pic.h include/cpu.h kernel/as
 $(BUILD)/buddy.o: mm/buddy.c include/buddy.h include/printk.h
 	$(CC) $(CFLAGS) -c mm/buddy.c -o $@
 
+$(BUILD)/slab.o: mm/slab.c include/slab.h include/buddy.h include/printk.h
+	$(CC) $(CFLAGS) -c mm/slab.c -o $@
+
 $(TARGET): $(OBJS)
 	$(LD) $(LDFLAGS) -o $@ $(OBJS) $(LIBGCC)
 
 run: $(TARGET)
-	qemu-system-i386 -m 128 -kernel $(TARGET)
+	qemu-system-i386 -m 4096 -kernel $(TARGET)
 
 debug: $(TARGET)
 	qemu-system-i386 -m 4096 -kernel $(TARGET) -s -S &

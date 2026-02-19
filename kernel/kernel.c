@@ -4,6 +4,7 @@
 #include "pic.h"
 #include "pit.h"
 #include "buddy.h"
+#include "slab.h"
 #include "asm.h"
 
 /* =========================================================================
@@ -121,6 +122,9 @@ void kernel_main(void)
            buddy_mem_kb, buddy_mem_kb / 1024);
     
     buddy_init(mem_first_free_phys, buddy_mem_kb);
+    
+    /* Initialize slab allocator */
+    slab_init();
 
     printk("Kernel initialization complete.\n\n");
 
