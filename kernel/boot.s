@@ -1,5 +1,6 @@
 /* -----------------------------------------------------------------------
  * Multiboot header
+ * Required for QEMU -kernel to load the kernel, but we don't use the info
  * ----------------------------------------------------------------------- */
 .section .multiboot
 .align 4
@@ -36,36 +37,12 @@ stack_bottom:
 stack_top:
 
 /* -----------------------------------------------------------------------
- * Saved copy of Multiboot info structure (60 bytes)
- * The bootloader passes this at a low physical address that may be
- * overwritten during page table setup. We copy it here before paging.
- * ----------------------------------------------------------------------- */
-.align 16
-saved_multiboot_info:
-    .skip 64                  /* 60 bytes rounded up to 64 for alignment */
-
-/* -----------------------------------------------------------------------
  * Boot entry – runs at physical address (paging not yet enabled)
  * ----------------------------------------------------------------------- */
 .section .text
 .global _start
 _start:
-    /* Save Multiboot magic and info pointer */
-    movl  %eax, %esi              /* %esi = Multiboot magic */
-    
-    /* Copy Multiboot info to safe location before setting up page tables
-     * The original may be at a low address that gets overwritten */
-    movl  $saved_multiboot_info, %edi
-    subl  $0xC0000000, %edi       /* convert to physical address */
-    pushl %edi                    /* save destination for later */
-    
-    movl  %ebx, %esi              /* source = original mbi (physical) */
-    movl  $15, %ecx               /* 60 bytes / 4 = 15 dwords */
-    rep   movsl
-    
-    /* Restore pointers */
-    popl  %edi                    /* %edi = physical addr of saved copy */
-    movl  %eax, %esi              /* restore magic to %esi */
+    /* Simple entry point - no bootloader dependencies */
 
     /* ================================================================
      * Build page directory and page tables
@@ -170,12 +147,7 @@ _start_higher:
     /* Set up kernel stack (virtual address) */
     movl  $stack_top, %esp
 
-    /* Restore Multiboot info and push arguments for kernel_main */
-    movl  %edi, %ebx              /* restore mbi pointer */
-    pushl %ebx                    /* arg2: mbi (physical) */
-    pushl %esi                    /* arg1: magic */
-
-    /* Call the C kernel */
+    /* Call the C kernel (no arguments needed) */
     call  kernel_main
 
     /* Halt if kernel_main ever returns */

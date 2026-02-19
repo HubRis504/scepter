@@ -29,7 +29,7 @@ $(BUILD):
 $(BUILD)/boot.o: kernel/boot.s
 	$(AS) kernel/boot.s -o $@
 
-$(BUILD)/kernel.o: kernel/kernel.c include/multiboot.h
+$(BUILD)/kernel.o: kernel/kernel.c
 	$(CC) $(CFLAGS) -c kernel/kernel.c -o $@
 
 $(BUILD)/cpu.o: kernel/cpu.c include/cpu.h kernel/asm.h
@@ -60,7 +60,7 @@ $(TARGET): $(OBJS)
 	$(LD) $(LDFLAGS) -o $@ $(OBJS) $(LIBGCC)
 
 run: $(TARGET)
-	qemu-system-i386 -m 4096 -kernel $(TARGET)
+	qemu-system-i386 -m 128 -kernel $(TARGET)
 
 debug: $(TARGET)
 	qemu-system-i386 -m 4096 -kernel $(TARGET) -s -S &

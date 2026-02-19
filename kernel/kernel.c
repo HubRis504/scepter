@@ -3,8 +3,8 @@
 #include "printk.h"
 #include "pic.h"
 #include "pit.h"
-#include "multiboot.h"
 #include "buddy.h"
+#include "asm.h"
 
 /* =========================================================================
  * Linker-provided symbol: one byte past the end of the kernel image.
@@ -18,18 +18,44 @@ extern char kernel_end[];
  * Global memory information (set once in kernel_main, read-only after that)
  * ========================================================================= */
 
-/* Total detected RAM above 1 MB, in kilobytes (from Multiboot mem_upper) */
-uint32_t mem_upper_kb  = 0;
+/* Total detected RAM in kilobytes (from CMOS detection) */
+uint32_t mem_total_kb  = 0;
 
 /* Physical address of the first 4 KB-aligned page that is free to use
  * (i.e. the page immediately after the kernel image). */
 uint32_t mem_first_free_phys = 0;
 
 /* =========================================================================
+ * CMOS Memory Detection
+ * ========================================================================= */
+
+static uint32_t detect_memory_cmos(void)
+{
+    /* Read memory size from CMOS/RTC NVRAM registers */
+    
+    /* Extended memory (1MB to 16MB) from CMOS registers 0x17-0x18 */
+    outb(0x70, 0x17);
+    uint32_t low = inb(0x71);
+    outb(0x70, 0x18);
+    uint32_t high = inb(0x71);
+    uint32_t extended_kb = (high << 8) | low;
+    
+    /* Memory above 16MB from CMOS registers 0x34-0x35 (in 64KB blocks) */
+    outb(0x70, 0x34);
+    low = inb(0x71);
+    outb(0x70, 0x35);
+    high = inb(0x71);
+    uint32_t above_16mb_kb = ((high << 8) | low) * 64;
+    
+    /* Total: base 1MB + extended + above_16mb */
+    return 1024 + extended_kb + above_16mb_kb;
+}
+
+/* =========================================================================
  * kernel_main
  * ========================================================================= */
 
-void kernel_main(uint32_t mb_magic, multiboot_info_t *mbi)
+void kernel_main(void)
 {
     gdt_init();
     idt_init();
@@ -39,30 +65,14 @@ void kernel_main(uint32_t mb_magic, multiboot_info_t *mbi)
     pit_init(100);
     sti();
 
-    printk("Hello, Kernel World!\n\n");
+    printk("Scepter i386 Kernel\n\n");
 
     /* ------------------------------------------------------------------
-     * Memory information from Multiboot
-     *
-     * The bootloader passes mbi as a PHYSICAL address. Since we've
-     * mapped all physical memory 0-1GB to virtual 0xC0000000-0xFFFFFFFF,
-     * we add KERNEL_VMA to convert physical to virtual address.
+     * Detect memory size via CMOS
      * ------------------------------------------------------------------ */
-    multiboot_info_t *mbi_virt = (multiboot_info_t *)((uint32_t)mbi + KERNEL_VMA);
-
-    if (mb_magic == MB_MAGIC && (mbi_virt->flags & MB_FLAG_MEM)) {
-        mem_upper_kb = mbi_virt->mem_upper;
-
-        printk("[MEM] upper=%u KB (%u MB)  total~=%u MB\n",
-               mem_upper_kb,
-               mem_upper_kb / 1024,
-               (mem_upper_kb + 1024) / 1024);
-    } else {
-        printk("[MEM] Multiboot memory info unavailable "
-               "(magic=0x%08x flags=0x%x)\n",
-               mb_magic,
-               (mb_magic == MB_MAGIC) ? mbi_virt->flags : 0);
-    }
+    mem_total_kb = detect_memory_cmos();
+    printk("[MEM] Detected %u KB (%u MB) via CMOS\n",
+           mem_total_kb, mem_total_kb / 1024);
 
     /* ------------------------------------------------------------------
      * End of kernel image → first free physical page
@@ -83,15 +93,28 @@ void kernel_main(uint32_t mb_magic, multiboot_info_t *mbi)
      * All physical memory (0-1GB) is pre-mapped by boot.s
      * Virtual 0xC0000000-0xFFFFFFFF → Physical 0x00000000-0x3FFFFFFF
      *
-     * Initialize buddy allocator with the pre-mapped 1GB region.
-     * Give it all memory from end of kernel to end of pre-mapped region.
+     * Initialize buddy allocator with available memory.
+     * Protection: Only use memory that exists (detected via CMOS)
+     * Note: Low memory (0-1MB) is NOT used in this project
      * ------------------------------------------------------------------ */
-    uint32_t max_phys = 0x40000000;  /* 1 GB pre-mapped region end */
+    uint32_t max_phys_mapped = 0x40000000;  /* 1 GB pre-mapped region end */
+    uint32_t max_phys_detected = mem_total_kb * 1024;  /* Actual RAM size */
+    
+    /* Use the minimum of mapped region and detected memory */
+    uint32_t max_phys = (max_phys_detected < max_phys_mapped) 
+                        ? max_phys_detected 
+                        : max_phys_mapped;
     
     /* Calculate memory available for buddy allocator */
+    /* Start from first free page after kernel (guaranteed >= 1MB) */
     uint32_t buddy_mem_kb = (max_phys - mem_first_free_phys) / 1024;
     
     printk("[MEM] Pre-mapped region: phys 0x00000000-0x3FFFFFFF (1 GB)\n");
+    printk("[MEM] Detected RAM: %u KB (%u MB)\n", 
+           mem_total_kb, mem_total_kb / 1024);
+    printk("[MEM] Usable limit: phys 0x%08x (%u MB)\n",
+           max_phys, max_phys / (1024 * 1024));
+    printk("[MEM] Low memory (0-1MB): RESERVED, not used\n");
     printk("[MEM] Buddy allocator range: phys 0x%08x-0x%08x\n",
            mem_first_free_phys, max_phys);
     printk("[MEM] Buddy allocator memory: %u KB (%u MB)\n\n",
