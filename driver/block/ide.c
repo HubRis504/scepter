@@ -30,18 +30,22 @@ static int ide_wait_bsy(uint16_t base_port)
 /**
  * Wait for IDE drive to be ready and have data (BSY=0, DRQ=1)
  * Returns 0 on success, -1 on timeout
+ * Pattern matches the proven working raw IDE test
  */
 static int ide_wait_drq(uint16_t base_port)
 {
-    if (ide_wait_bsy(base_port) != 0) {
-        return -1;
+    int timeout = 1000000;
+    uint8_t status;
+    
+    /* Wait for BSY=0 AND DRQ=1 simultaneously - like working raw test */
+    while (timeout-- > 0) {
+        status = inb(base_port + IDE_REG_STATUS);
+        if (!(status & IDE_STATUS_BSY) && (status & IDE_STATUS_DRQ)) {
+            return 0;  /* Success: BSY=0, DRQ=1 */
+        }
     }
     
-    int timeout = 100000;
-    while (!(inb(base_port + IDE_REG_STATUS) & IDE_STATUS_DRQ) && timeout > 0) {
-        timeout--;
-    }
-    return (timeout > 0) ? 0 : -1;
+    return -1;  /* Timeout */
 }
 
 /**
@@ -199,35 +203,50 @@ int ide_read_sectors(uint8_t disk_id, uint32_t lba, uint8_t count, void *buffer)
     ide_disk_t *disk = &ide_disks[disk_id];
     uint16_t *buf = (uint16_t *)buffer;
     
-    /* Wait for drive to be ready */
-    if (ide_wait_bsy(disk->base_port) != 0) {
-        return -1;
+    /* EXACT PATTERN FROM WORKING RAW TEST - DO NOT USE HELPER FUNCTIONS */
+    
+    /* Step 1: Wait for not busy - INLINE like raw test */
+    int wait_timeout = 1000000;
+    while ((inb(disk->base_port + IDE_REG_STATUS) & 0x80) && wait_timeout > 0) {
+        wait_timeout--;
+    }
+    if (wait_timeout == 0) {
+        return -1;  /* Timeout */
     }
     
-    /* Select drive and set LBA mode */
-    uint8_t drive_bits = (disk->drive == 0) ? IDE_DRIVE_MASTER : IDE_DRIVE_SLAVE;
+    /* Step 2: Select drive and set LBA mode - EXACTLY like raw test */
+    uint8_t drive_bits = (disk->drive == 0) ? 0xE0 : 0xF0;  /* Master=0xE0, Slave=0xF0 */
     drive_bits |= ((lba >> 24) & 0x0F);  /* LBA bits 24-27 */
     outb(disk->base_port + IDE_REG_DRIVE, drive_bits);
     
-    /* Wait for drive selection to take effect (400ns delay) */
+    /* Step 3: Wait 1000 loops - EXACTLY like raw test */
     for (int i = 0; i < 1000; i++) {
         inb(disk->base_port + IDE_REG_STATUS);
     }
     
-    /* Send sector count and LBA */
+    /* Step 4: Send sector count and LBA */
     outb(disk->base_port + IDE_REG_SECCOUNT, count);
     outb(disk->base_port + IDE_REG_LBA_LOW, (uint8_t)(lba & 0xFF));
     outb(disk->base_port + IDE_REG_LBA_MID, (uint8_t)((lba >> 8) & 0xFF));
     outb(disk->base_port + IDE_REG_LBA_HIGH, (uint8_t)((lba >> 16) & 0xFF));
     
-    /* Send READ command */
+    /* Step 5: Send READ command */
     outb(disk->base_port + IDE_REG_COMMAND, IDE_CMD_READ_PIO);
     
-    /* Read sectors */
+    /* Step 6: Read sectors */
     for (uint8_t sector = 0; sector < count; sector++) {
-        /* Wait for data to be ready */
-        if (ide_wait_drq(disk->base_port) != 0) {
-            return -1;
+        /* Wait for BSY=0, DRQ=1 - INLINE like raw test */
+        int timeout = 1000000;
+        uint8_t status;
+        while (timeout-- > 0) {
+            status = inb(disk->base_port + IDE_REG_STATUS);
+            if (!(status & 0x80) && (status & 0x08)) {
+                break;  /* BSY=0, DRQ=1 */
+            }
+        }
+        
+        if (timeout <= 0 || !(status & 0x08)) {
+            return -1;  /* Timeout or no DRQ */
         }
         
         /* Read 256 words (512 bytes) */

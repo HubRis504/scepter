@@ -9,6 +9,7 @@
 #include "driver.h"
 #include "cache.h"
 #include "ide.h"
+#include "part_mbr.h"
 #include "asm.h"
 
 /* =========================================================================
@@ -151,198 +152,14 @@ void kernel_main(void)
     ide_register_driver();
     ide_print_disks();
     
-    /* ================================================================
-     * IDE + CACHE INTEGRATION TEST
-     * ================================================================ */
-    printk("\n=== IDE + CACHE TEST ===\n");
-    
-    /* Check if hda exists */
-    if (ide_disks[0].exists) {
-        uint8_t buf1[512], buf2[512], buf3[512];
-        uint32_t hits_before, misses_before, entries_before;
-        uint32_t hits_after, misses_after, entries_after;
-        
-        /* Test 1: Read sector 0 from hda (cache miss expected) */
-        printk("Test 1: Read sector 0 (cache miss)\n");
-        cache_stats(&hits_before, &misses_before, &entries_before);
-        
-        if (bread(0, 0, buf1, 512) == 512) {
-            cache_stats(&hits_after, &misses_after, &entries_after);
-            if (misses_after == misses_before + 1) {
-                printk("  Result: PASS (cache miss, data read from disk)\n");
-            } else {
-                printk("  Result: FAIL (expected cache miss)\n");
-            }
-        } else {
-            printk("  Result: FAIL (read failed)\n");
-        }
-        
-        /* Test 2: Read same sector again (cache hit expected) */
-        printk("\nTest 2: Read sector 0 again (cache hit)\n");
-        cache_stats(&hits_before, &misses_before, &entries_before);
-        
-        if (bread(0, 0, buf2, 512) == 512) {
-            cache_stats(&hits_after, &misses_after, &entries_after);
-            
-            /* Verify data matches */
-            int match = 1;
-            for (int i = 0; i < 512; i++) {
-                if (buf1[i] != buf2[i]) {
-                    match = 0;
-                    break;
-                }
-            }
-            
-            if (hits_after == hits_before + 1 && match) {
-                printk("  Result: PASS (cache hit, data matches)\n");
-            } else if (!match) {
-                printk("  Result: FAIL (data mismatch)\n");
-            } else {
-                printk("  Result: FAIL (expected cache hit)\n");
-            }
-        } else {
-            printk("  Result: FAIL (read failed)\n");
-        }
-        
-        /* Test 3: Read different sector (cache miss) */
-        printk("\nTest 3: Read sector 100 (cache miss)\n");
-        cache_stats(&hits_before, &misses_before, &entries_before);
-        
-        if (bread(0, 100, buf3, 512) == 512) {
-            cache_stats(&hits_after, &misses_after, &entries_after);
-            if (misses_after == misses_before + 1) {
-                printk("  Result: PASS (cache miss for different sector)\n");
-            } else {
-                printk("  Result: FAIL (expected cache miss)\n");
-            }
-        } else {
-            printk("  Result: FAIL (read failed)\n");
-        }
-        
-        /* Test 4: Read multiple sectors to test cache */
-        printk("\nTest 4: Read 10 sectors multiple times\n");
-        int test4_pass = 1;
-        
-        /* First pass - all misses */
-        for (int i = 200; i < 210; i++) {
-            if (bread(0, i, buf1, 512) != 512) {
-                test4_pass = 0;
-                break;
-            }
-        }
-        
-        /* Second pass - all hits */
-        cache_stats(&hits_before, &misses_before, &entries_before);
-        for (int i = 200; i < 210; i++) {
-            if (bread(0, i, buf1, 512) != 512) {
-                test4_pass = 0;
-                break;
-            }
-        }
-        cache_stats(&hits_after, &misses_after, &entries_after);
-        
-        if (test4_pass && (hits_after - hits_before) == 10) {
-            printk("  Result: PASS (10 hits on second pass)\n");
-        } else {
-            printk("  Result: FAIL\n");
-        }
-        
-        /* Test 5: Overall cache statistics */
-        printk("\nTest 5: Cache statistics\n");
-        cache_stats(&hits_after, &misses_after, &entries_after);
-        printk("  Hits: %u, Misses: %u, Entries: %u\n", 
-               hits_after, misses_after, entries_after);
-        
-        if (hits_after + misses_after > 0) {
-            uint32_t hit_rate = (hits_after * 100) / (hits_after + misses_after);
-            printk("  Hit rate: %u%%\n", hit_rate);
-            
-            if (hit_rate >= 50) {
-                printk("  Result: PASS (good hit rate)\n");
-            } else {
-                printk("  Result: WARN (low hit rate)\n");
-            }
-        }
-        
-        printk("\n=== IDE + CACHE TEST COMPLETE ===\n\n");
-    } else {
-        printk("\n[IDE] No hda detected, skipping cache test\n\n");
-    }
+    /* Initialize MBR partition support */
+    mbr_init();
+    mbr_print_partitions();
     
     printk("Kernel initialization complete.\n\n");
     
     /* Enable interrupts after all initialization is complete */
 
-    /* ===================================================================
-     * RAW IDE TEST - Direct hardware I/O (no driver functions)
-     * =================================================================== */
-    printk("\n=== RAW IDE TEST ===\n");
-    
-    #define IDE_BASE 0x1F0
-    #define IDE_REG_DATA     (IDE_BASE + 0)
-    #define IDE_REG_STATUS   (IDE_BASE + 7)
-    #define IDE_REG_COMMAND  (IDE_BASE + 7)
-    #define IDE_REG_DRIVE    (IDE_BASE + 6)
-    #define IDE_REG_SECCOUNT (IDE_BASE + 2)
-    #define IDE_REG_LBA_LOW  (IDE_BASE + 3)
-    #define IDE_REG_LBA_MID  (IDE_BASE + 4)
-    #define IDE_REG_LBA_HIGH (IDE_BASE + 5)
-    
-    /* Wait for not busy */
-    printk("Waiting for drive ready...\n");
-    int wait_count = 0;
-    while (inb(IDE_REG_STATUS) & 0x80) {
-        wait_count++;
-        if (wait_count > 1000000) {
-            printk("Timeout waiting for BSY=0!\n");
-            break;
-        }
-    }
-    printk("Drive ready after %d loops\n", wait_count);
-    
-    /* Select drive 0, LBA mode */
-    outb(IDE_REG_DRIVE, 0xE0);  /* Master, LBA */
-    printk("Selected drive 0\n");
-    
-    /* Wait a bit */
-    for (int i = 0; i < 1000; i++) inb(IDE_REG_STATUS);
-    
-    /* Send read command for LBA 1 */
-    outb(IDE_REG_SECCOUNT, 1);    /* 1 sector */
-    outb(IDE_REG_LBA_LOW, 0);     /* LBA = 1 */
-    outb(IDE_REG_LBA_MID, 0);
-    outb(IDE_REG_LBA_HIGH, 0);
-    outb(IDE_REG_COMMAND, 0x20);  /* READ SECTORS */
-    
-    printk("Sent READ command for LBA 1, waiting for DRQ...\n");
-    
-    /* Wait for BSY=0, DRQ=1 */
-    int timeout = 1000000;
-    uint8_t status;
-    while (timeout-- > 0) {
-        status = inb(IDE_REG_STATUS);
-        if (!(status & 0x80) && (status & 0x08)) break;  /* BSY=0, DRQ=1 */
-    }
-    
-    printk("Status = 0x%02x (remaining timeout=%d)\n", status, timeout);
-    
-    if (timeout > 0 && (status & 0x08)) {
-        printk("SUCCESS! DRQ is set, reading data...\n");
-        uint16_t data[16];
-        for (int i = 0; i < 16; i++) {
-            data[i] = inw(IDE_REG_DATA);
-        }
-        printk("First 16 words: ");
-        for (int i = 0; i < 16; i++) {
-            printk("%04x ", data[i]);
-        }
-        printk("\n");
-    } else {
-        printk("TIMEOUT or NO DRQ! status=0x%02x\n", status);
-        if (status & 0x01) printk("  ERR bit is set!\n");
-        if (status & 0x80) printk("  BSY bit is still set!\n");
-        if (!(status & 0x08)) printk("  DRQ bit is NOT set!\n");
-    }
-
     while(1);
 }
+ 

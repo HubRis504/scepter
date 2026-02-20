@@ -32,8 +32,6 @@ static int mbr_parse_disk(uint8_t disk_id)
         return 0;
     }
     
-    printk("[MBR] DEBUG: Read MBR from disk %d, first bytes: %02x %02x %02x %02x\n",
-           disk_id, mbr_buffer[0], mbr_buffer[1], mbr_buffer[2], mbr_buffer[3]);
 
     /* Verify MBR signature */
     if (mbr->signature != MBR_SIGNATURE) {

@@ -26,7 +26,8 @@ KERNEL_OBJS = $(BUILD)/boot.o \
               $(BUILD)/driver.o \
               $(BUILD)/tty.o \
               $(BUILD)/ide.o \
-              $(BUILD)/cache.o
+              $(BUILD)/cache.o \
+              $(BUILD)/part_mbr.o
 
 .PHONY: all clean run debug
 
@@ -82,6 +83,9 @@ $(BUILD)/ide.o: driver/block/ide.c include/ide.h kernel/asm.h include/printk.h
 
 $(BUILD)/cache.o: driver/block/cache.c include/cache.h include/driver.h include/slab.h include/printk.h
 	$(CC) $(CFLAGS) driver/block/cache.c -o $@
+
+$(BUILD)/part_mbr.o: driver/block/part_mbr.c include/part_mbr.h include/driver.h include/ide.h include/printk.h
+	$(CC) $(CFLAGS) driver/block/part_mbr.c -o $@
 
 # Link kernel as ELF (Multiboot compatible)
 $(TARGET): $(KERNEL_OBJS)
