@@ -6,18 +6,22 @@ SECTIONS
 {
     . = 0xC0100000;
 
+    /* Combined section: multiboot header + text */
     .text : AT(ADDR(.text) - KERNEL_VMA) {
         *(.multiboot)
         *(.text)
     }
 
-    .data : AT(ADDR(.data) - KERNEL_VMA) { *(.data) }
-
-    .bss : AT(ADDR(.bss) - KERNEL_VMA) {
+    .data : AT(ADDR(.data) - KERNEL_VMA) { 
+        *(.data)
+        *(.rodata*)
         *(.bss)
-        *(COMMON)
     }
 
     /* One-past-end marker used by kernel.c to find the first free page */
     kernel_end = .;
+    
+    /DISCARD/ : { 
+        *(*)
+    }
 }

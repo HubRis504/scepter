@@ -40,7 +40,6 @@ static struct {
 
 static void tty_write_cell(uint8_t col, uint8_t row, char c, uint8_t color)
 {
-    extern volatile uint16_t *const VGA_BUFFER;
     volatile uint16_t *vga = (volatile uint16_t *)0xC00B8000;
     vga[row * TTY_WIDTH + col] = (uint16_t)(uint8_t)c | ((uint16_t)color << 8);
 }
