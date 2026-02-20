@@ -1,4 +1,5 @@
 #include "driver.h"
+#include "cache.h"
 #include "slab.h"
 #include <stdint.h>
 #include <stddef.h>
@@ -21,16 +22,30 @@ typedef struct device {
  * Global State
  * ========================================================================= */
 
-static device_t *device_list = NULL;
+static device_t *char_device_list = NULL;
+static device_t *block_device_list = NULL;
 
 /* =========================================================================
  * Internal Helper Functions
  * ========================================================================= */
 
-/* Find a device by primary ID */
-static device_t *find_device(int prim_id)
+/* Find a character device by primary ID */
+static device_t *find_char_device(int prim_id)
 {
-    device_t *dev = device_list;
+    device_t *dev = char_device_list;
+    while (dev) {
+        if (dev->prim_id == prim_id) {
+            return dev;
+        }
+        dev = dev->next;
+    }
+    return NULL;
+}
+
+/* Find a block device by primary ID */
+static device_t *find_block_device(int prim_id)
+{
+    device_t *dev = block_device_list;
     while (dev) {
         if (dev->prim_id == prim_id) {
             return dev;
@@ -46,7 +61,8 @@ static device_t *find_device(int prim_id)
 
 void driver_init(void)
 {
-    device_list = NULL;
+    char_device_list = NULL;
+    block_device_list = NULL;
 }
 
 /* =========================================================================
@@ -60,7 +76,7 @@ int register_char_device(int prim_id, char_ops_t *ops)
     }
     
     /* Check if device already registered */
-    if (find_device(prim_id)) {
+    if (find_char_device(prim_id)) {
         return -1;
     }
     
@@ -75,9 +91,9 @@ int register_char_device(int prim_id, char_ops_t *ops)
     dev->type = DEV_CHAR;
     dev->ops.char_ops = *ops;
     
-    /* Add to front of list */
-    dev->next = device_list;
-    device_list = dev;
+    /* Add to front of char device list */
+    dev->next = char_device_list;
+    char_device_list = dev;
     
     return 0;
 }
@@ -89,7 +105,7 @@ int register_block_device(int prim_id, block_ops_t *ops)
     }
     
     /* Check if device already registered */
-    if (find_device(prim_id)) {
+    if (find_block_device(prim_id)) {
         return -1;
     }
     
@@ -104,9 +120,9 @@ int register_block_device(int prim_id, block_ops_t *ops)
     dev->type = DEV_BLOCK;
     dev->ops.block_ops = *ops;
     
-    /* Add to front of list */
-    dev->next = device_list;
-    device_list = dev;
+    /* Add to front of block device list */
+    dev->next = block_device_list;
+    block_device_list = dev;
     
     return 0;
 }
@@ -117,8 +133,8 @@ int register_block_device(int prim_id, block_ops_t *ops)
 
 char cread(int prim_id, int scnd_id)
 {
-    device_t *dev = find_device(prim_id);
-    if (!dev || dev->type != DEV_CHAR) {
+    device_t *dev = find_char_device(prim_id);
+    if (!dev) {
         return 0;
     }
     
@@ -131,8 +147,8 @@ char cread(int prim_id, int scnd_id)
 
 int cwrite(int prim_id, int scnd_id, char c)
 {
-    device_t *dev = find_device(prim_id);
-    if (!dev || dev->type != DEV_CHAR) {
+    device_t *dev = find_char_device(prim_id);
+    if (!dev) {
         return -1;
     }
     
@@ -149,8 +165,8 @@ int cwrite(int prim_id, int scnd_id, char c)
 
 int bread(int prim_id, int scnd_id, void *buf, size_t count)
 {
-    device_t *dev = find_device(prim_id);
-    if (!dev || dev->type != DEV_BLOCK) {
+    device_t *dev = find_block_device(prim_id);
+    if (!dev) {
         return -1;
     }
     
@@ -158,13 +174,29 @@ int bread(int prim_id, int scnd_id, void *buf, size_t count)
         return -1;
     }
     
-    return dev->ops.block_ops.read(scnd_id, buf, count);
+    /* Try cache first (only for 512-byte block reads) */
+    if (count == CACHE_BLOCK_SIZE) {
+        if (cache_lookup(prim_id, scnd_id, buf)) {
+            /* Cache hit! Return immediately */
+            return count;
+        }
+    }
+    
+    /* Cache miss or non-standard size - read from device */
+    int ret = dev->ops.block_ops.read(prim_id, scnd_id, buf, count);
+    
+    /* Cache the block if it's standard size and read succeeded */
+    if (ret > 0 && count == CACHE_BLOCK_SIZE) {
+        cache_insert(prim_id, scnd_id, buf);
+    }
+    
+    return ret;
 }
 
 int bwrite(int prim_id, int scnd_id, const void *buf, size_t count)
 {
-    device_t *dev = find_device(prim_id);
-    if (!dev || dev->type != DEV_BLOCK) {
+    device_t *dev = find_block_device(prim_id);
+    if (!dev) {
         return -1;
     }
     
@@ -172,5 +204,14 @@ int bwrite(int prim_id, int scnd_id, const void *buf, size_t count)
         return -1;
     }
     
-    return dev->ops.block_ops.write(scnd_id, buf, count);
+    /* Write to device */
+    int ret = dev->ops.block_ops.write(prim_id, scnd_id, buf, count);
+    
+    /* Update cache if write succeeded and block is standard size */
+    if (ret > 0 && count == CACHE_BLOCK_SIZE) {
+        /* Insert/update in cache and mark as clean (write-through) */
+        cache_insert(prim_id, scnd_id, buf);
+    }
+    
+    return ret;
 }

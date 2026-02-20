@@ -1,4 +1,5 @@
 #include "ide.h"
+#include "driver.h"
 #include "asm.h"
 #include "printk.h"
 #include <stddef.h>
@@ -227,6 +228,85 @@ int ide_read_sectors(uint8_t disk_id, uint32_t lba, uint8_t count, void *buffer)
     }
     
     return 0;
+}
+
+/* =========================================================================
+ * Block Device Driver Integration
+ * ========================================================================= */
+
+/**
+ * Block device read callback
+ * prim_id: 0=hda, 1=hdb, 2=hdc, 3=hdd
+ * scnd_id: LBA sector number
+ */
+static int ide_block_read(int prim_id, int scnd_id, void *buf, size_t count)
+{
+    /* Validate disk ID */
+    if (prim_id < 0 || prim_id >= IDE_MAX_DISKS) {
+        return -1;
+    }
+    
+    /* Only handle 512-byte sector reads */
+    if (count != IDE_SECTOR_SIZE) {
+        return -1;
+    }
+    
+    /* Read one sector */
+    if (ide_read_sectors((uint8_t)prim_id, (uint32_t)scnd_id, 1, buf) == 0) {
+        return IDE_SECTOR_SIZE;
+    }
+    
+    return -1;
+}
+
+/**
+ * Block device write callback
+ * prim_id: 0=hda, 1=hdb, 2=hdc, 3=hdd
+ * scnd_id: LBA sector number
+ */
+static int ide_block_write(int prim_id, int scnd_id, const void *buf, size_t count)
+{
+    /* Validate disk ID */
+    if (prim_id < 0 || prim_id >= IDE_MAX_DISKS) {
+        return -1;
+    }
+    
+    /* Only handle 512-byte sector writes */
+    if (count != IDE_SECTOR_SIZE) {
+        return -1;
+    }
+    
+    /* Write one sector */
+    if (ide_write_sectors((uint8_t)prim_id, (uint32_t)scnd_id, 1, buf) == 0) {
+        return IDE_SECTOR_SIZE;
+    }
+    
+    return -1;
+}
+
+/**
+ * Register IDE disks as block devices
+ * hda=0, hdb=1, hdc=2, hdd=3
+ */
+void ide_register_driver(void)
+{
+    block_ops_t ops = {
+        .read = ide_block_read,
+        .write = ide_block_write
+    };
+    
+    const char *names[] = {"hda", "hdb", "hdc", "hdd"};
+    
+    /* Register each detected disk with device IDs 0-3 */
+    for (int i = 0; i < IDE_MAX_DISKS; i++) {
+        if (ide_disks[i].exists) {
+            if (register_block_device(i, &ops) == 0) {
+                printk("[IDE] Registered %s as block device %d\n", names[i], i);
+            } else {
+                printk("[IDE] Failed to register %s\n", names[i]);
+            }
+        }
+    }
 }
 
 int ide_write_sectors(uint8_t disk_id, uint32_t lba, uint8_t count, const void *buffer)

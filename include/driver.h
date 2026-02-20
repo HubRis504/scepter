@@ -26,8 +26,8 @@ typedef char (*char_read_fn)(int scnd_id);
 typedef int (*char_write_fn)(int scnd_id, char c);
 
 /* Block device callbacks */
-typedef int (*block_read_fn)(int scnd_id, void *buf, size_t count);
-typedef int (*block_write_fn)(int scnd_id, const void *buf, size_t count);
+typedef int (*block_read_fn)(int prim_id, int scnd_id, void *buf, size_t count);
+typedef int (*block_write_fn)(int prim_id, int scnd_id, const void *buf, size_t count);
 
 /* -------------------------------------------------------------------------
  * Device Operations Structures

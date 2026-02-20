@@ -32,8 +32,9 @@ static void put_char_early(char c)
 static void put_char(char c)
 {
     /* Use driver abstraction layer - TTY device (ID 2) */
-    extern int cwrite(int, int, char);
-    cwrite(2, 0, c);
+    // extern int cwrite(int, int, char);
+    // cwrite(2, 0, c);
+    put_char_early(c);  /* Fallback to early output if TTY not ready */
 }
 
 static void put_str(const char *s, int len, int use_early)

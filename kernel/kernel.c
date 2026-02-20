@@ -7,6 +7,7 @@
 #include "buddy.h"
 #include "slab.h"
 #include "driver.h"
+#include "cache.h"
 #include "ide.h"
 #include "asm.h"
 
@@ -129,6 +130,9 @@ void kernel_main(void)
     /* Initialize slab allocator */
     slab_init();
     
+    /* Initialize block device cache */
+    cache_init();
+    
     /* Initialize driver subsystem and register devices */
     driver_init();
     vga_register_driver();
@@ -144,7 +148,127 @@ void kernel_main(void)
     
     /* Initialize IDE driver */
     ide_init();
+    ide_register_driver();
     ide_print_disks();
+    
+    /* ================================================================
+     * IDE + CACHE INTEGRATION TEST
+     * ================================================================ */
+    printk("\n=== IDE + CACHE TEST ===\n");
+    
+    /* Check if hda exists */
+    if (ide_disks[0].exists) {
+        uint8_t buf1[512], buf2[512], buf3[512];
+        uint32_t hits_before, misses_before, entries_before;
+        uint32_t hits_after, misses_after, entries_after;
+        
+        /* Test 1: Read sector 0 from hda (cache miss expected) */
+        printk("Test 1: Read sector 0 (cache miss)\n");
+        cache_stats(&hits_before, &misses_before, &entries_before);
+        
+        if (bread(0, 0, buf1, 512) == 512) {
+            cache_stats(&hits_after, &misses_after, &entries_after);
+            if (misses_after == misses_before + 1) {
+                printk("  Result: PASS (cache miss, data read from disk)\n");
+            } else {
+                printk("  Result: FAIL (expected cache miss)\n");
+            }
+        } else {
+            printk("  Result: FAIL (read failed)\n");
+        }
+        
+        /* Test 2: Read same sector again (cache hit expected) */
+        printk("\nTest 2: Read sector 0 again (cache hit)\n");
+        cache_stats(&hits_before, &misses_before, &entries_before);
+        
+        if (bread(0, 0, buf2, 512) == 512) {
+            cache_stats(&hits_after, &misses_after, &entries_after);
+            
+            /* Verify data matches */
+            int match = 1;
+            for (int i = 0; i < 512; i++) {
+                if (buf1[i] != buf2[i]) {
+                    match = 0;
+                    break;
+                }
+            }
+            
+            if (hits_after == hits_before + 1 && match) {
+                printk("  Result: PASS (cache hit, data matches)\n");
+            } else if (!match) {
+                printk("  Result: FAIL (data mismatch)\n");
+            } else {
+                printk("  Result: FAIL (expected cache hit)\n");
+            }
+        } else {
+            printk("  Result: FAIL (read failed)\n");
+        }
+        
+        /* Test 3: Read different sector (cache miss) */
+        printk("\nTest 3: Read sector 100 (cache miss)\n");
+        cache_stats(&hits_before, &misses_before, &entries_before);
+        
+        if (bread(0, 100, buf3, 512) == 512) {
+            cache_stats(&hits_after, &misses_after, &entries_after);
+            if (misses_after == misses_before + 1) {
+                printk("  Result: PASS (cache miss for different sector)\n");
+            } else {
+                printk("  Result: FAIL (expected cache miss)\n");
+            }
+        } else {
+            printk("  Result: FAIL (read failed)\n");
+        }
+        
+        /* Test 4: Read multiple sectors to test cache */
+        printk("\nTest 4: Read 10 sectors multiple times\n");
+        int test4_pass = 1;
+        
+        /* First pass - all misses */
+        for (int i = 200; i < 210; i++) {
+            if (bread(0, i, buf1, 512) != 512) {
+                test4_pass = 0;
+                break;
+            }
+        }
+        
+        /* Second pass - all hits */
+        cache_stats(&hits_before, &misses_before, &entries_before);
+        for (int i = 200; i < 210; i++) {
+            if (bread(0, i, buf1, 512) != 512) {
+                test4_pass = 0;
+                break;
+            }
+        }
+        cache_stats(&hits_after, &misses_after, &entries_after);
+        
+        if (test4_pass && (hits_after - hits_before) == 10) {
+            printk("  Result: PASS (10 hits on second pass)\n");
+        } else {
+            printk("  Result: FAIL\n");
+        }
+        
+        /* Test 5: Overall cache statistics */
+        printk("\nTest 5: Cache statistics\n");
+        cache_stats(&hits_after, &misses_after, &entries_after);
+        printk("  Hits: %u, Misses: %u, Entries: %u\n", 
+               hits_after, misses_after, entries_after);
+        
+        if (hits_after + misses_after > 0) {
+            uint32_t hit_rate = (hits_after * 100) / (hits_after + misses_after);
+            printk("  Hit rate: %u%%\n", hit_rate);
+            
+            if (hit_rate >= 50) {
+                printk("  Result: PASS (good hit rate)\n");
+            } else {
+                printk("  Result: WARN (low hit rate)\n");
+            }
+        }
+        
+        printk("\n=== IDE + CACHE TEST COMPLETE ===\n\n");
+    } else {
+        printk("\n[IDE] No hda detected, skipping cache test\n\n");
+    }
+    
     printk("Kernel initialization complete.\n\n");
     
     /* Enable interrupts after all initialization is complete */
