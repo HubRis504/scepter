@@ -1,8 +1,5 @@
 # Build output directory (objects, binaries)
 build/
-*.o
-*.bin
-*.sym
 
 # Disk/CD images
 *.iso
