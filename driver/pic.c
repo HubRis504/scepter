@@ -40,6 +40,7 @@ void pic_init(uint8_t master_offset, uint8_t slave_offset)
     /* Restore saved masks (or mask all if you prefer a clean slate) */
     outb(PIC1_DATA, mask1);
     outb(PIC2_DATA, mask2);
+    pic_disable_all();
 }
 
 void pic_send_eoi(uint8_t irq)

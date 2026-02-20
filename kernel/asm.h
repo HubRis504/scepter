@@ -21,6 +21,20 @@ static inline uint8_t inb(uint16_t port)
     return val;
 }
 
+/* Write a 16-bit word to an I/O port */
+static inline void outw(uint16_t port, uint16_t val)
+{
+    __asm__ volatile ("outw %0, %1" : : "a"(val), "Nd"(port));
+}
+
+/* Read a 16-bit word from an I/O port */
+static inline uint16_t inw(uint16_t port)
+{
+    uint16_t val;
+    __asm__ volatile ("inw %1, %0" : "=a"(val) : "Nd"(port));
+    return val;
+}
+
 /* Short I/O delay (write to unused port 0x80) */
 static inline void io_wait(void)
 {

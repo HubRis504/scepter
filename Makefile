@@ -24,7 +24,8 @@ KERNEL_OBJS = $(BUILD)/boot.o \
               $(BUILD)/buddy.o \
               $(BUILD)/slab.o \
               $(BUILD)/driver.o \
-              $(BUILD)/tty.o
+              $(BUILD)/tty.o \
+              $(BUILD)/ide.o
 
 .PHONY: all clean run debug
 
@@ -75,6 +76,9 @@ $(BUILD)/buddy.o: mm/buddy.c include/buddy.h include/printk.h
 $(BUILD)/slab.o: mm/slab.c include/slab.h include/buddy.h include/printk.h
 	$(CC) $(CFLAGS) mm/slab.c -o $@
 
+$(BUILD)/ide.o: driver/block/ide.c include/ide.h kernel/asm.h include/printk.h
+	$(CC) $(CFLAGS) driver/block/ide.c -o $@
+
 # Link kernel as ELF (Multiboot compatible)
 $(TARGET): $(KERNEL_OBJS)
 	$(LD) $(LDFLAGS) -o $@ $(KERNEL_OBJS) $(LIBGCC)
@@ -85,10 +89,10 @@ $(TARGET): $(KERNEL_OBJS)
 # Run and Debug
 # ===========================================================================
 run: $(TARGET)
-	qemu-system-i386 -m 4096 -kernel $(TARGET)
+	qemu-system-i386 -m 128 -kernel $(TARGET) -hda disk.img
 
 debug: $(TARGET)
-	qemu-system-i386 -m 4096 -kernel $(TARGET) -s -S &
+	qemu-system-i386 -m 4096 -kernel $(TARGET) -s -S -hda disk.img &
 	gdb -ex "target remote :1234" -ex "symbol-file $(TARGET)"
 
 clean:

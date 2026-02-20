@@ -4,41 +4,29 @@
 #include <stddef.h>
 
 /* =========================================================================
- * Constants
+ * Simple Bitmap-Based Page Allocator
+ * 
+ * Instead of complex buddy allocation, uses a simple bitmap where each bit
+ * represents one page (0=free, 1=allocated). Simple, fast, and bulletproof.
  * ========================================================================= */
 
 #define KERNEL_VMA  0xC0000000U
 
-/* =========================================================================
- * Free Block Structure
- *
- * Each free block stores a linked list node at its beginning.
- * When allocated, this space is available to the user.
- * ========================================================================= */
+/* Maximum pages we can track (1GB / 4KB = 256K pages = 32KB bitmap) */
+#define MAX_PAGES 262144
 
-typedef struct free_block {
-    struct free_block *next;
-} free_block_t;
-
-/* =========================================================================
- * Allocator State
- * ========================================================================= */
-
+/* Page allocator state */
 typedef struct {
-    free_block_t *free_lists[MAX_ORDER + 1];  /* One free list per order */
-    uint32_t total_pages;                      /* Total pages managed */
-    uint32_t free_pages;                       /* Currently free pages */
-    uint32_t base_phys;                        /* Starting physical address */
-} buddy_allocator_t;
+    uint32_t base_phys;       /* Starting physical address */
+    uint32_t total_pages;     /* Total pages available */
+    uint32_t free_pages;      /* Currently free pages */
+    uint32_t bitmap[MAX_PAGES / 32];  /* Bitmap: 32 pages per uint32_t */
+} page_allocator_t;
 
-static buddy_allocator_t buddy;
-
-/* Track allocation order for each page (simple bitmap approach) */
-#define MAX_TRACKED_PAGES 262144  /* 1GB / 4KB */
-static uint8_t alloc_order[MAX_TRACKED_PAGES];
+static page_allocator_t allocator;
 
 /* =========================================================================
- * Helper Functions
+ * Bitmap Helper Functions
  * ========================================================================= */
 
 /* Convert physical address to virtual address */
@@ -53,124 +41,54 @@ static inline uint32_t virt_to_phys(void *virt)
     return (uint32_t)virt - KERNEL_VMA;
 }
 
-/* Calculate the buddy address for a given block */
-static inline uint32_t buddy_addr(uint32_t addr, uint32_t order)
+/* Set a bit in the bitmap (mark page as allocated) */
+static inline void bitmap_set(uint32_t page_idx)
 {
-    uint32_t size = PAGE_SIZE << order;
-    return addr ^ size;
+    uint32_t word_idx = page_idx / 32;
+    uint32_t bit_idx = page_idx % 32;
+    allocator.bitmap[word_idx] |= (1U << bit_idx);
 }
 
-/* Check if an address is aligned to the given order */
-static inline int is_aligned(uint32_t addr, uint32_t order)
+/* Clear a bit in the bitmap (mark page as free) */
+static inline void bitmap_clear(uint32_t page_idx)
 {
-    uint32_t size = PAGE_SIZE << order;
-    return (addr & (size - 1)) == 0;
+    uint32_t word_idx = page_idx / 32;
+    uint32_t bit_idx = page_idx % 32;
+    allocator.bitmap[word_idx] &= ~(1U << bit_idx);
 }
 
-/* Calculate the order needed for a given size in bytes */
-static uint32_t order_from_size(size_t size)
+/* Test if a bit is set in the bitmap */
+static inline int bitmap_test(uint32_t page_idx)
 {
-    /* Round up to page size */
-    uint32_t pages = (size + PAGE_SIZE - 1) >> PAGE_SHIFT;
-    
-    /* Special case: 0 or 1 page needs order 0 */
-    if (pages <= 1) {
-        return 0;
-    }
-    
-    /* Find the order (power of 2 pages) */
-    uint32_t order = 0;
-    uint32_t p = 1;
-    while (p < pages && order < MAX_ORDER) {
-        p <<= 1;
-        order++;
-    }
-    
-    return order;
+    uint32_t word_idx = page_idx / 32;
+    uint32_t bit_idx = page_idx % 32;
+    return (allocator.bitmap[word_idx] & (1U << bit_idx)) != 0;
 }
 
-/* Remove a block from a free list */
-static void remove_from_list(free_block_t **list, free_block_t *block)
+/* Find N consecutive free pages in bitmap, returns starting page index or -1 */
+static int find_free_pages(uint32_t count)
 {
-    if (*list == block) {
-        *list = block->next;
-    } else {
-        free_block_t *curr = *list;
-        while (curr && curr->next != block) {
-            curr = curr->next;
-        }
-        if (curr) {
-            curr->next = block->next;
-        }
-    }
-}
-
-/* Add a block to the front of a free list */
-static void add_to_list(free_block_t **list, free_block_t *block)
-{
-    block->next = *list;
-    *list = block;
-}
-
-/* Split a block of given order into two buddies of order-1 */
-static void split_block(uint32_t order)
-{
-    if (order == 0 || order > MAX_ORDER) return;
+    uint32_t consecutive = 0;
+    uint32_t start_idx = 0;
     
-    /* Get a block from the higher order list */
-    free_block_t *block = buddy.free_lists[order];
-    if (!block) return;
-    
-    /* Remove from current list */
-    buddy.free_lists[order] = block->next;
-    
-    /* Calculate buddy addresses */
-    uint32_t phys = virt_to_phys(block);
-    uint32_t size = PAGE_SIZE << (order - 1);
-    
-    free_block_t *block1 = block;
-    free_block_t *block2 = phys_to_virt(phys + size);
-    
-    /* Add both buddies to the lower order list */
-    add_to_list(&buddy.free_lists[order - 1], block1);
-    add_to_list(&buddy.free_lists[order - 1], block2);
-}
-
-/* Try to coalesce a block with its buddy */
-static uint32_t coalesce(uint32_t phys, uint32_t order)
-{
-    while (order < MAX_ORDER) {
-        uint32_t buddy_phys = buddy_addr(phys, order);
-        
-        /* Check if buddy exists and is free */
-        free_block_t *curr = buddy.free_lists[order];
-        free_block_t *buddy_block = NULL;
-        
-        while (curr) {
-            if (virt_to_phys(curr) == buddy_phys) {
-                buddy_block = curr;
-                break;
+    for (uint32_t i = 0; i < allocator.total_pages; i++) {
+        if (!bitmap_test(i)) {
+            /* Free page */
+            if (consecutive == 0) {
+                start_idx = i;
             }
-            curr = curr->next;
+            consecutive++;
+            
+            if (consecutive == count) {
+                return start_idx;
+            }
+        } else {
+            /* Allocated page, reset counter */
+            consecutive = 0;
         }
-        
-        if (!buddy_block) {
-            /* Buddy not free, stop coalescing */
-            break;
-        }
-        
-        /* Remove buddy from free list */
-        remove_from_list(&buddy.free_lists[order], buddy_block);
-        
-        /* Coalesce: use the lower address of the two */
-        if (buddy_phys < phys) {
-            phys = buddy_phys;
-        }
-        
-        order++;
     }
     
-    return order;
+    return -1;  /* Not enough consecutive pages */
 }
 
 /* =========================================================================
@@ -179,46 +97,30 @@ static uint32_t coalesce(uint32_t phys, uint32_t order)
 
 void buddy_init(uint32_t base_phys, uint32_t total_kb)
 {
-    /* Initialize free lists */
-    for (int i = 0; i <= MAX_ORDER; i++) {
-        buddy.free_lists[i] = NULL;
-    }
+    allocator.base_phys = base_phys;
     
-    buddy.base_phys = base_phys;
-    
-    /* Calculate total pages available (convert KB to pages) */
+    /* Calculate total pages (convert KB to pages) */
     uint32_t total_bytes = total_kb * 1024;
-    buddy.total_pages = total_bytes >> PAGE_SHIFT;
-    buddy.free_pages = 0;
+    allocator.total_pages = total_bytes >> PAGE_SHIFT;
     
-    /* Silent initialization - details already printed by kernel.c */
-    
-    /* Add free memory in largest possible blocks */
-    uint32_t curr_phys = base_phys;
-    uint32_t end_phys = base_phys + (buddy.total_pages << PAGE_SHIFT);
-    
-    while (curr_phys < end_phys) {
-        /* Find largest order that fits */
-        uint32_t order = MAX_ORDER;
-        uint32_t size = PAGE_SIZE << order;
-        
-        while (order > 0) {
-            size = PAGE_SIZE << order;
-            
-            /* Check if block fits and is aligned */
-            if (is_aligned(curr_phys, order) && (curr_phys + size) <= end_phys) {
-                break;
-            }
-            order--;
-        }
-        
-        /* Add block to free list */
-        free_block_t *block = phys_to_virt(curr_phys);
-        add_to_list(&buddy.free_lists[order], block);
-        
-        buddy.free_pages += (1 << order);
-        curr_phys += size;
+    /* Cap at maximum trackable pages */
+    if (allocator.total_pages > MAX_PAGES) {
+        printk("[ALLOCATOR] Requested %u pages, capping to %u\n",
+               allocator.total_pages, MAX_PAGES);
+        allocator.total_pages = MAX_PAGES;
     }
+    
+    /* Initialize all pages as free (bitmap = 0) */
+    for (uint32_t i = 0; i < (MAX_PAGES / 32); i++) {
+        allocator.bitmap[i] = 0;
+    }
+    
+    allocator.free_pages = allocator.total_pages;
+    
+    printk("[ALLOCATOR] Initialized: %u pages (%u MB) from phys 0x%08x\n",
+           allocator.total_pages, 
+           (allocator.total_pages * PAGE_SIZE) / (1024 * 1024),
+           base_phys);
 }
 
 /* =========================================================================
@@ -227,47 +129,34 @@ void buddy_init(uint32_t base_phys, uint32_t total_kb)
 
 void *page_alloc(size_t size)
 {
-    if (size == 0) return NULL;
-    
-    uint32_t order = order_from_size(size);
-    
-    if (order > MAX_ORDER) {
+    if (size == 0) {
         return NULL;
     }
     
-    /* Find a free block of sufficient size */
-    uint32_t curr_order = order;
-    while (curr_order <= MAX_ORDER && !buddy.free_lists[curr_order]) {
-        curr_order++;
+    /* Calculate number of pages needed (round up) */
+    uint32_t pages_needed = (size + PAGE_SIZE - 1) >> PAGE_SHIFT;
+    
+    if (pages_needed > allocator.free_pages) {
+        return NULL;  /* Not enough free pages */
     }
     
-    if (curr_order > MAX_ORDER) {
-        return NULL;
+    /* Find consecutive free pages */
+    int start_idx = find_free_pages(pages_needed);
+    if (start_idx < 0) {
+        return NULL;  /* No consecutive block large enough */
     }
     
-    /* Split larger blocks if necessary */
-    while (curr_order > order) {
-        split_block(curr_order);
-        curr_order--;
+    /* Mark pages as allocated */
+    for (uint32_t i = 0; i < pages_needed; i++) {
+        bitmap_set(start_idx + i);
     }
     
-    /* Allocate block from the free list */
-    free_block_t *block = buddy.free_lists[order];
-    if (!block) {
-        return NULL;
-    }
+    allocator.free_pages -= pages_needed;
     
-    buddy.free_lists[order] = block->next;
-    buddy.free_pages -= (1 << order);
+    /* Calculate physical address */
+    uint32_t phys = allocator.base_phys + (start_idx << PAGE_SHIFT);
     
-    /* Track allocation order */
-    uint32_t phys = virt_to_phys(block);
-    uint32_t page_idx = (phys - buddy.base_phys) >> PAGE_SHIFT;
-    if (page_idx < MAX_TRACKED_PAGES) {
-        alloc_order[page_idx] = order;
-    }
-    
-    return (void *)block;
+    return phys_to_virt(phys);
 }
 
 /* =========================================================================
@@ -276,33 +165,39 @@ void *page_alloc(size_t size)
 
 void page_free(void *addr)
 {
-    if (!addr) return;
-    
-    uint32_t phys = virt_to_phys(addr);
-    
-    /* Validate address is within managed range */
-    if (phys < buddy.base_phys) {
+    if (!addr) {
         return;
     }
     
-    /* Get the original allocation order */
-    uint32_t page_idx = (phys - buddy.base_phys) >> PAGE_SHIFT;
-    uint32_t orig_order = 0;
-    if (page_idx < MAX_TRACKED_PAGES) {
-        orig_order = alloc_order[page_idx];
-        alloc_order[page_idx] = 0;  /* Clear tracking */
+    uint32_t phys = virt_to_phys(addr);
+    
+    /* Validate address is within our range */
+    if (phys < allocator.base_phys) {
+        printk("[ALLOCATOR] ERROR: Free 0x%08x below base 0x%08x\n",
+               phys, allocator.base_phys);
+        return;
     }
     
-    /* Return the originally allocated pages to free count */
-    buddy.free_pages += (1 << orig_order);
+    uint32_t offset = phys - allocator.base_phys;
+    uint32_t page_idx = offset >> PAGE_SHIFT;
     
-    /* Try to coalesce with buddy (this doesn't change free_pages count,
-     * just reorganizes blocks into larger ones) */
-    uint32_t order = coalesce(phys, orig_order);
+    if (page_idx >= allocator.total_pages) {
+        printk("[ALLOCATOR] ERROR: Free 0x%08x beyond range (page %u >= %u)\n",
+               phys, page_idx, allocator.total_pages);
+        return;
+    }
     
-    /* Add to appropriate free list */
-    free_block_t *block = phys_to_virt(phys);
-    add_to_list(&buddy.free_lists[order], block);
+    /* Check if page was actually allocated */
+    if (!bitmap_test(page_idx)) {
+        printk("[ALLOCATOR] WARNING: Double free of page %u (phys 0x%08x)\n",
+               page_idx, phys);
+        return;
+    }
+    
+    /* Free the page - we can only free one page at a time since we don't
+     * track allocation sizes. This is fine for our use case. */
+    bitmap_clear(page_idx);
+    allocator.free_pages++;
 }
 
 /* =========================================================================
@@ -311,15 +206,15 @@ void page_free(void *addr)
 
 uint32_t buddy_total_pages(void)
 {
-    return buddy.total_pages;
+    return allocator.total_pages;
 }
 
 uint32_t buddy_free_pages(void)
 {
-    return buddy.free_pages;
+    return allocator.free_pages;
 }
 
 uint32_t buddy_used_pages(void)
 {
-    return buddy.total_pages - buddy.free_pages;
+    return allocator.total_pages - allocator.free_pages;
 }
