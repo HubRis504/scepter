@@ -1,20 +1,14 @@
 AS      = i686-linux-gnu-as
 CC      = i686-linux-gnu-gcc
 LD      = i686-linux-gnu-ld
-OBJCOPY = i686-linux-gnu-objcopy
-NASM    = nasm
 CFLAGS  = -ffreestanding -O2 -Wall -Wextra -I include -I kernel
 LIBGCC  = $(shell i686-linux-gnu-gcc -print-libgcc-file-name)
-LDFLAGS = -T linker.ld -nostdlib
+LDFLAGS = -T linker.ld -nostdlib -Map=kernel.sym
 
 BUILD   = build
-BOOTLOADER = $(BUILD)/bootloader.bin
-KERNEL_ELF = $(BUILD)/kernel.elf
-KERNEL_BIN = $(BUILD)/kernel.bin
-DISK_IMG   = $(BUILD)/scepter.img
+TARGET  = $(BUILD)/kernel.bin
 
-OBJS    = $(BUILD)/header.o \
-          $(BUILD)/boot.o \
+OBJS    = $(BUILD)/boot.o \
           $(BUILD)/kernel.o \
           $(BUILD)/cpu.o \
           $(BUILD)/printk.o \
@@ -28,17 +22,12 @@ OBJS    = $(BUILD)/header.o \
           $(BUILD)/driver.o \
           $(BUILD)/tty.o
 
-.PHONY: all clean run debug disk
+.PHONY: all clean run debug
 
-all: $(BUILD) $(DISK_IMG)
-
-disk: $(DISK_IMG)
+all: $(BUILD) $(TARGET)
 
 $(BUILD):
 	mkdir -p $(BUILD)
-
-$(BUILD)/header.o: kernel/header.s
-	$(AS) kernel/header.s -o $@
 
 $(BUILD)/boot.o: kernel/boot.s
 	$(AS) kernel/boot.s -o $@
@@ -79,32 +68,15 @@ $(BUILD)/buddy.o: mm/buddy.c include/buddy.h include/printk.h
 $(BUILD)/slab.o: mm/slab.c include/slab.h include/buddy.h include/printk.h
 	$(CC) $(CFLAGS) -c mm/slab.c -o $@
 
-# Build bootloader
-$(BOOTLOADER): boot/bootloader.asm | $(BUILD)
-	$(NASM) -f bin $< -o $@
-
-# Build kernel ELF
-$(KERNEL_ELF): $(OBJS)
+$(TARGET): $(OBJS)
 	$(LD) $(LDFLAGS) -o $@ $(OBJS) $(LIBGCC)
 
-# Convert kernel ELF to flat binary
-$(KERNEL_BIN): $(KERNEL_ELF)
-	$(OBJCOPY) -O binary $< $@
+run: $(TARGET)
+	qemu-system-i386 -m 4096 -kernel $(TARGET)
 
-# Create bootable disk image
-$(DISK_IMG): $(BOOTLOADER) $(KERNEL_BIN)
-	cat $(BOOTLOADER) $(KERNEL_BIN) > $@
-	@echo "Disk image created: $(DISK_IMG)"
-	@echo "Bootloader size: $$(stat -c%s $(BOOTLOADER)) bytes"
-	@echo "Kernel size: $$(stat -c%s $(KERNEL_BIN)) bytes"
-	@echo "Total image size: $$(stat -c%s $(DISK_IMG)) bytes"
-
-run: $(DISK_IMG)
-	qemu-system-i386 -m 4096 -drive file=$(DISK_IMG),format=raw,if=ide
-
-debug: $(DISK_IMG)
-	qemu-system-i386 -m 4096 -drive file=$(DISK_IMG),format=raw,if=ide -s -S &
-	gdb $(KERNEL_ELF) -ex "target remote :1234"
+debug: $(TARGET)
+	qemu-system-i386 -m 4096 -kernel $(TARGET) -s -S &
+	gdb $(TARGET) -ex "target remote :1234"
 
 clean:
 	rm -rf $(BUILD)
