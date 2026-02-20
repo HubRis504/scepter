@@ -200,12 +200,19 @@ int ide_read_sectors(uint8_t disk_id, uint32_t lba, uint8_t count, void *buffer)
     uint16_t *buf = (uint16_t *)buffer;
     
     /* Wait for drive to be ready */
-    ide_wait_bsy(disk->base_port);
+    if (ide_wait_bsy(disk->base_port) != 0) {
+        return -1;
+    }
     
     /* Select drive and set LBA mode */
     uint8_t drive_bits = (disk->drive == 0) ? IDE_DRIVE_MASTER : IDE_DRIVE_SLAVE;
     drive_bits |= ((lba >> 24) & 0x0F);  /* LBA bits 24-27 */
     outb(disk->base_port + IDE_REG_DRIVE, drive_bits);
+    
+    /* Wait for drive selection to take effect (400ns delay) */
+    for (int i = 0; i < 1000; i++) {
+        inb(disk->base_port + IDE_REG_STATUS);
+    }
     
     /* Send sector count and LBA */
     outb(disk->base_port + IDE_REG_SECCOUNT, count);
@@ -219,7 +226,9 @@ int ide_read_sectors(uint8_t disk_id, uint32_t lba, uint8_t count, void *buffer)
     /* Read sectors */
     for (uint8_t sector = 0; sector < count; sector++) {
         /* Wait for data to be ready */
-        ide_wait_drq(disk->base_port);
+        if (ide_wait_drq(disk->base_port) != 0) {
+            return -1;
+        }
         
         /* Read 256 words (512 bytes) */
         for (int i = 0; i < 256; i++) {

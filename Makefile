@@ -93,7 +93,7 @@ $(TARGET): $(KERNEL_OBJS)
 # Run and Debug
 # ===========================================================================
 run: $(TARGET)
-	qemu-system-i386 -m 128 -kernel $(TARGET) -hda disk.img
+	qemu-system-i386 -m 128 -kernel $(TARGET) -drive file=disk.img,format=raw,if=ide,index=0,media=disk
 
 debug: $(TARGET)
 	qemu-system-i386 -m 4096 -kernel $(TARGET) -s -S -hda disk.img &

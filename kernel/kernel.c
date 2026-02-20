@@ -272,7 +272,77 @@ void kernel_main(void)
     printk("Kernel initialization complete.\n\n");
     
     /* Enable interrupts after all initialization is complete */
-    sti();
+
+    /* ===================================================================
+     * RAW IDE TEST - Direct hardware I/O (no driver functions)
+     * =================================================================== */
+    printk("\n=== RAW IDE TEST ===\n");
+    
+    #define IDE_BASE 0x1F0
+    #define IDE_REG_DATA     (IDE_BASE + 0)
+    #define IDE_REG_STATUS   (IDE_BASE + 7)
+    #define IDE_REG_COMMAND  (IDE_BASE + 7)
+    #define IDE_REG_DRIVE    (IDE_BASE + 6)
+    #define IDE_REG_SECCOUNT (IDE_BASE + 2)
+    #define IDE_REG_LBA_LOW  (IDE_BASE + 3)
+    #define IDE_REG_LBA_MID  (IDE_BASE + 4)
+    #define IDE_REG_LBA_HIGH (IDE_BASE + 5)
+    
+    /* Wait for not busy */
+    printk("Waiting for drive ready...\n");
+    int wait_count = 0;
+    while (inb(IDE_REG_STATUS) & 0x80) {
+        wait_count++;
+        if (wait_count > 1000000) {
+            printk("Timeout waiting for BSY=0!\n");
+            break;
+        }
+    }
+    printk("Drive ready after %d loops\n", wait_count);
+    
+    /* Select drive 0, LBA mode */
+    outb(IDE_REG_DRIVE, 0xE0);  /* Master, LBA */
+    printk("Selected drive 0\n");
+    
+    /* Wait a bit */
+    for (int i = 0; i < 1000; i++) inb(IDE_REG_STATUS);
+    
+    /* Send read command for LBA 1 */
+    outb(IDE_REG_SECCOUNT, 1);    /* 1 sector */
+    outb(IDE_REG_LBA_LOW, 0);     /* LBA = 1 */
+    outb(IDE_REG_LBA_MID, 0);
+    outb(IDE_REG_LBA_HIGH, 0);
+    outb(IDE_REG_COMMAND, 0x20);  /* READ SECTORS */
+    
+    printk("Sent READ command for LBA 1, waiting for DRQ...\n");
+    
+    /* Wait for BSY=0, DRQ=1 */
+    int timeout = 1000000;
+    uint8_t status;
+    while (timeout-- > 0) {
+        status = inb(IDE_REG_STATUS);
+        if (!(status & 0x80) && (status & 0x08)) break;  /* BSY=0, DRQ=1 */
+    }
+    
+    printk("Status = 0x%02x (remaining timeout=%d)\n", status, timeout);
+    
+    if (timeout > 0 && (status & 0x08)) {
+        printk("SUCCESS! DRQ is set, reading data...\n");
+        uint16_t data[16];
+        for (int i = 0; i < 16; i++) {
+            data[i] = inw(IDE_REG_DATA);
+        }
+        printk("First 16 words: ");
+        for (int i = 0; i < 16; i++) {
+            printk("%04x ", data[i]);
+        }
+        printk("\n");
+    } else {
+        printk("TIMEOUT or NO DRQ! status=0x%02x\n", status);
+        if (status & 0x01) printk("  ERR bit is set!\n");
+        if (status & 0x80) printk("  BSY bit is still set!\n");
+        if (!(status & 0x08)) printk("  DRQ bit is NOT set!\n");
+    }
 
     while(1);
 }
