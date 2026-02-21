@@ -76,8 +76,16 @@ typedef struct {
 void mbr_init(void);
 
 /**
- * Print partition table information for all disks
+ * Print all detected partitions to console
  */
 void mbr_print_partitions(void);
+
+/**
+ * Get partition information
+ * @param device_id Partition device ID (4-7)
+ * @param partition_id Partition number (1-4)
+ * @return Partition info or NULL if invalid
+ */
+const partition_info_t *mbr_get_partition_info(int device_id, int partition_id);
 
 #endif /* PART_MBR_H */

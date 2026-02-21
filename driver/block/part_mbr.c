@@ -263,3 +263,26 @@ void mbr_print_partitions(void)
     
     printk("\n");
 }
+
+const partition_info_t *mbr_get_partition_info(int device_id, int partition_id)
+{
+    /* Map device_id to disk_id (4->0, 5->1, 6->2, 7->3) */
+    int disk_id = device_id - 4;
+    
+    /* Validate parameters */
+    if (disk_id < 0 || disk_id >= IDE_MAX_DISKS) {
+        return NULL;
+    }
+    
+    if (partition_id < 1 || partition_id > MBR_PARTITION_COUNT) {
+        return NULL;
+    }
+    
+    partition_info_t *part = &partitions[disk_id][partition_id - 1];
+    
+    if (!part->valid) {
+        return NULL;
+    }
+    
+    return part;
+}

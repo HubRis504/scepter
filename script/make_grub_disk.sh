@@ -1,16 +1,16 @@
 #!/bin/bash
 #
-# Create a clean bootable GRUB disk image (no kernel)
+# Create a clean bootable GRUB disk image with FAT32
 # Usage: sudo ./script/make_grub_disk.sh
 #
 
 set -e  # Exit on error
 
 DISK_IMG="disk.img"
-DISK_SIZE_MB=64
+DISK_SIZE_MB=128  # Increased for FAT32 (was 64)
 
 echo "=================================================="
-echo "Creating Clean Bootable GRUB Disk Image"
+echo "Creating Clean Bootable GRUB Disk Image (FAT32)"
 echo "=================================================="
 
 # Check if running as root
@@ -20,11 +20,11 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # Step 1: Create blank disk image
-echo "[1/9] Creating ${DISK_SIZE_MB}MB disk image..."
+echo "[1/7] Creating ${DISK_SIZE_MB}MB disk image..."
 dd if=/dev/zero of="$DISK_IMG" bs=1M count=$DISK_SIZE_MB status=progress
 
 # Step 2: Create partition table with fdisk
-echo "[2/9] Creating MBR partition table..."
+echo "[2/7] Creating MBR partition table..."
 fdisk "$DISK_IMG" << EOF > /dev/null 2>&1
 o
 n
@@ -32,12 +32,14 @@ p
 1
 2048
 
+t
+c
 a
 w
 EOF
 
 # Step 3: Setup loop device
-echo "[3/9] Setting up loop device..."
+echo "[3/7] Setting up loop device..."
 LOOP_DEV=$(losetup -f)
 losetup -P "$LOOP_DEV" "$DISK_IMG"
 echo "    Loop device: $LOOP_DEV"
@@ -45,9 +47,9 @@ echo "    Loop device: $LOOP_DEV"
 # Wait for partition to appear
 sleep 1
 
-# Step 4: Format partition as ext2
-echo "[4/9] Formatting partition as ext2..."
-mkfs.ext2 -F "${LOOP_DEV}p1" > /dev/null 2>&1
+# Step 4: Format partition as FAT32
+echo "[4/7] Formatting partition as FAT32..."
+mkfs.vfat -F 32 -n "SCEPTER" "${LOOP_DEV}p1" > /dev/null 2>&1
 
 # Step 5: Mount partition temporarily
 echo "[5/7] Mounting partition..."
@@ -75,12 +77,16 @@ EOF
 umount "$TEMP_MOUNT"
 rmdir "$TEMP_MOUNT"
 losetup -d "$LOOP_DEV"
-chmod 777 "$DISK_IMG"
+chmod 666 "$DISK_IMG"
 
 echo ""
 echo "=================================================="
-echo "✓ Clean GRUB disk created: $DISK_IMG"
+echo "✓ Clean GRUB disk created: $DISK_IMG (FAT32)"
 echo "=================================================="
+echo ""
+echo "Partition layout:"
+echo "  - Partition 1: FAT32, bootable, ~128MB"
+echo "  - Volume label: SCEPTER"
 echo ""
 echo "Use 'make mount' to mount the disk for kernel updates"
 echo ""

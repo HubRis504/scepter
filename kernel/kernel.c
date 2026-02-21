@@ -11,6 +11,8 @@
 #include "kbd.h"
 #include "ide.h"
 #include "part_mbr.h"
+#include "fs.h"
+#include "fat32.h"
 #include "asm.h"
 
 /* =========================================================================
@@ -161,10 +163,36 @@ void kernel_main(void)
     mbr_init();
     mbr_print_partitions();
     
-    printk("Kernel initialization complete.\n\n");
+    /* Initialize VFS */
+    vfs_init();
+    
+    /* Register FAT32 filesystem */
+    fs_ops_t fat32_ops;
+    fat32_get_ops(&fat32_ops);
+    register_filesystem("fat32", &fat32_ops);
+    
+    /* Mount hda1 (device 4, partition 1) as FAT32 at root */
+    printk("\n");
+    if (fs_mount(4, 1, "fat32", "/") == 0) {
+        /* Test: Read /etc/conf */
+        int fd = fs_open("/etc/conf", O_RDONLY);
+        if (fd >= 0) {
+            char buf[512];
+            int n = fs_read(fd, buf, sizeof(buf) - 1);
+            if (n > 0) {
+                buf[n] = '\0';  /* Null-terminate */
+                printk("\n[TEST] Contents of /etc/conf:\n");
+                printk("--- BEGIN ---\n");
+                printk("%s", buf);
+                printk("--- END ---\n");
+            }
+            fs_close(fd);
+        }
+    }
+    
+    printk("\nKernel initialization complete.\n\n");
     
     /* Enable interrupts after all initialization is complete */
-    sti();
     while(1);
 }
  
