@@ -25,6 +25,7 @@ KERNEL_OBJS = $(BUILD)/boot.o \
               $(BUILD)/slab.o \
               $(BUILD)/driver.o \
               $(BUILD)/tty.o \
+              $(BUILD)/kbd.o \
               $(BUILD)/ide.o \
               $(BUILD)/cache.o \
               $(BUILD)/part_mbr.o
@@ -59,6 +60,9 @@ $(BUILD)/driver.o: driver/driver.c include/driver.h include/slab.h
 
 $(BUILD)/tty.o: driver/char/tty.c include/tty.h include/vga.h include/driver.h
 	$(CC) $(CFLAGS) driver/char/tty.c -o $@
+
+$(BUILD)/kbd.o: driver/char/kbd.c include/kbd.h include/driver.h include/pic.h include/cpu.h kernel/asm.h
+	$(CC) $(CFLAGS) driver/char/kbd.c -o $@
 
 $(BUILD)/pic.o: driver/pic.c include/pic.h kernel/asm.h
 	$(CC) $(CFLAGS) driver/pic.c -o $@

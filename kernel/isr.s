@@ -100,6 +100,7 @@ irq\num:
 .endm
 
 IRQ_STUB 0, pit_isr   /* IRQ0 – PIT timer */
+IRQ_STUB 1, kbd_isr   /* IRQ1 – Keyboard */
 
 /* -------------------------------------------------------------------------
  * Common handler: save context, switch to kernel env, call panic_isr

@@ -1,5 +1,6 @@
 #include "printk.h"
 #include "driver.h"
+#include "pit.h"
 #include <stdint.h>
 
 /* =========================================================================
@@ -367,6 +368,38 @@ void vprintk(const char *fmt, va_list args)
 
 void printk(const char *fmt, ...)
 {
+    /* Print timestamp in milliseconds: [123] */
+    uint32_t ticks = pit_get_ticks();
+    uint32_t ms = ticks * 10;  /* Assuming 100Hz PIT frequency: 1 tick = 10ms */
+    
+    /* Print timestamp prefix */
+    put_char('[');
+    
+    /* Convert milliseconds to string and print */
+    char buf[12];  /* Enough for 32-bit number */
+    int i = 0;
+    uint32_t temp = ms;
+    
+    /* Handle zero case */
+    if (ms == 0) {
+        buf[i++] = '0';
+    } else {
+        /* Build digits in reverse */
+        while (temp > 0) {
+            buf[i++] = '0' + (temp % 10);
+            temp /= 10;
+        }
+    }
+    
+    /* Print digits in correct order */
+    for (int j = i - 1; j >= 0; j--) {
+        put_char(buf[j]);
+    }
+    
+    put_char(']');
+    put_char(' ');
+    
+    /* Print actual message */
     va_list args;
     va_start(args, fmt);
     vprintk(fmt, args);

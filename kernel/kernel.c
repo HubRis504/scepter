@@ -8,6 +8,7 @@
 #include "slab.h"
 #include "driver.h"
 #include "cache.h"
+#include "kbd.h"
 #include "ide.h"
 #include "part_mbr.h"
 #include "asm.h"
@@ -144,6 +145,10 @@ void kernel_main(void)
     
     pit_init(100);
     pit_register_driver();
+    
+    /* Initialize keyboard driver */
+    kbd_init();
+    kbd_register_driver();
 
     printk("Early initialization complete.\n\n");
     
@@ -159,7 +164,7 @@ void kernel_main(void)
     printk("Kernel initialization complete.\n\n");
     
     /* Enable interrupts after all initialization is complete */
-
+    sti();
     while(1);
 }
  

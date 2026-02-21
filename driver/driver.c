@@ -215,3 +215,31 @@ int bwrite(int prim_id, int scnd_id, const void *buf, size_t count)
     
     return ret;
 }
+
+/* =========================================================================
+ * Public API - ioctl Operations (Unified for Char and Block)
+ * ========================================================================= */
+
+int ioctl(int prim_id, int scnd_id, unsigned int command)
+{
+    /* Try character device first */
+    device_t *dev = find_char_device(prim_id);
+    if (dev) {
+        if (!dev->ops.char_ops.ioctl) {
+            return -1;  /* Device doesn't support ioctl */
+        }
+        return dev->ops.char_ops.ioctl(prim_id, scnd_id, command);
+    }
+    
+    /* Try block device */
+    dev = find_block_device(prim_id);
+    if (dev) {
+        if (!dev->ops.block_ops.ioctl) {
+            return -1;  /* Device doesn't support ioctl */
+        }
+        return dev->ops.block_ops.ioctl(prim_id, scnd_id, command);
+    }
+    
+    /* Device not found */
+    return -1;
+}

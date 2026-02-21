@@ -1,0 +1,430 @@
+================================================================================
+DEVICE DRIVER INTERFACE DOCUMENTATION
+================================================================================
+
+This file describes the functionality of all device drivers in the system,
+including what their read(), write(), and ioctl() operations do.
+
+Last Updated: 2026-02-21
+
+================================================================================
+CHARACTER DEVICES
+================================================================================
+
+--------------------------------------------------------------------------------
+Device 0: VGA (Video Graphics Array)
+--------------------------------------------------------------------------------
+Type: Character Device
+File: driver/char/vga.c
+Registration: vga_register_driver()
+
+Description:
+  Direct VGA text-mode output driver providing 80x25 character display.
+  Hardware-level VGA operations including cursor control and scrolling.
+
+Operations:
+  read(scnd_id)
+    - NOT SUPPORTED (always returns 0)
+    - VGA hardware does not provide read capability
+  
+  write(scnd_id, char)
+    - Writes a character to the VGA text buffer
+    - Parameters:
+        scnd_id: Unused (ignored)
+        char: ASCII character to display
+    - Special characters:
+        '\n' - Newline (move to start of next line)
+        '\r' - Carriage return (move to start of current line)
+        '\b' - Backspace (move cursor back and clear character)
+    - Automatically handles screen scrolling when reaching bottom
+    - Updates hardware cursor position
+    - Return: 0 on success
+  
+  ioctl(prim_id, scnd_id, command)
+    - NOT IMPLEMENTED (returns -1)
+
+Notes:
+  - Direct hardware access to VGA buffer at 0xC00B8000
+  - 80 columns × 25 rows text mode
+  - Default color: light grey on black
+  - Automatic scrolling when screen fills
+
+--------------------------------------------------------------------------------
+Device 1: PIT (Programmable Interval Timer)
+--------------------------------------------------------------------------------
+Type: Character Device  
+File: driver/char/pit.c
+Registration: pit_register_driver()
+
+Description:
+  8253/8254 PIT driver providing system timing and tick counting.
+  Configured to generate interrupts at specified frequency (typically 100Hz).
+
+Operations:
+  read(scnd_id)
+    - Returns LOW BYTE of the current tick counter
+    - Parameters:
+        scnd_id: Unused (ignored)
+    - Return: (tick_count & 0xFF) as char
+    - Note: Only returns lowest 8 bits, use pit_get_ticks() for full value
+  
+  write(scnd_id, char)
+    - NOT SUPPORTED (no operation)
+    - Parameters ignored
+    - Return: 0 (success, but does nothing)
+  
+  ioctl(prim_id, scnd_id, command)
+    - NOT IMPLEMENTED (returns -1)
+
+Notes:
+  - Generates IRQ0 interrupts at configured frequency
+  - Internal tick counter incremented on each interrupt
+  - For full 32-bit tick count, use pit_get_ticks() kernel function
+  - Default frequency: 100Hz (configurable via pit_init())
+
+--------------------------------------------------------------------------------
+Device 2: TTY (Terminal Emulator)
+--------------------------------------------------------------------------------
+Type: Character Device
+File: driver/char/tty.c  
+Registration: tty_register_driver()
+
+Description:
+  ANSI terminal emulator built on top of VGA. Provides escape sequence
+  parsing, cursor control, color support, and advanced text formatting.
+  Input is provided via keyboard driver (device 3).
+
+Operations:
+  read(scnd_id)
+    - Reads a character from the keyboard
+    - Parameters:
+        scnd_id: Unused (ignored)
+    - Returns: ASCII character from keyboard buffer, or 0 if buffer empty
+    - Implementation: Forwards to keyboard driver via cread(3, 0)
+    - Note: Non-blocking - returns immediately even if no key pressed
+  
+  write(scnd_id, char)
+    - Writes a character to TTY with ANSI escape sequence processing
+    - Parameters:
+        scnd_id: Unused (ignored)
+        char: Character to output (may be part of escape sequence)
+    - Control characters:
+        '\n' - Line feed (new line)
+        '\r' - Carriage return
+        '\b' - Backspace with erase
+        '\t' - Tab (8-space alignment)
+        '\a' - Bell (currently ignored)
+        '\033' (ESC) - Start of escape sequence
+    - ANSI Escape Sequences Supported:
+        ESC[nA    - Cursor up n lines
+        ESC[nB    - Cursor down n lines
+        ESC[nC    - Cursor forward n columns
+        ESC[nD    - Cursor backward n columns
+        ESC[n;mH  - Move cursor to row n, column m
+        ESC[2J    - Clear entire screen
+        ESC[K     - Erase from cursor to end of line
+        ESC[0m    - Reset all attributes
+        ESC[1m    - Bold/bright
+        ESC[30-37m - Foreground colors (ANSI colors)
+        ESC[40-47m - Background colors (ANSI colors)
+    - Return: 0 on success
+  
+  ioctl(prim_id, scnd_id, command)
+    - Send control commands to TTY
+    - Parameters:
+        prim_id: Must be 2 (TTY device)
+        scnd_id: Unused (ignored)
+        command: Command code
+    - Supported Commands:
+        0x1 (TTY_IOCTL_CLEAR) - Clear screen and reset cursor to (0,0)
+    - Return: 0 on success, -1 on unknown command
+    - Example: ioctl(2, 0, 0x1) clears the screen
+
+Notes:
+  - Built on VGA hardware but provides ANSI compatibility
+  - 80x25 character display
+  - Full color support (16 foreground, 8 background)
+  - Tab stops at every 8 characters
+  - ANSI color mapping to VGA color palette
+BLOCK DEVICES
+  - ioctl command 0x1 provides programmatic screen clearing
+
+--------------------------------------------------------------------------------
+Device 3: Keyboard (PS/2 Keyboard)
+--------------------------------------------------------------------------------
+Type: Character Device
+File: driver/char/kbd.c
+Registration: kbd_register_driver()
+
+Description:
+  PS/2 keyboard driver with IRQ1 interrupt handling. Converts scancodes to
+  ASCII characters using translation tables. Supports modifier keys (Shift,
+  Caps Lock) and buffers input in a 128-byte circular buffer. No automatic
+  echo - applications must explicitly output received characters.
+
+Operations:
+  read(scnd_id)
+    - Reads next character from keyboard buffer
+    - Parameters:
+        scnd_id: MUST be 0 (enforced, returns 0 if not)
+    - Returns: ASCII character from buffer, or 0 if buffer empty
+    - Non-blocking: Returns immediately
+    - Note: NO automatic echo to screen - silent input
+  
+  write(scnd_id, char)
+    - NOT SUPPORTED (always returns -1)
+    - Keyboard is input-only device
+  
+  ioctl(prim_id, scnd_id, command)
+    - NOT SUPPORTED (always returns -1)
+    - No control commands implemented
+
+Scancode Translation:
+  - Set 1 scancodes (PC/AT standard)
+  - Make codes: 0x01-0x58 (key pressed)
+  - Break codes: 0x81-0xD8 (key released, ignored)
+  - Special Keys:
+      Enter → '\n' (0x0A)
+      Backspace → '\b' (0x08)
+      Tab → '\t' (0x09)
+      Escape → 0x1B
+      Space → ' '
+  - Modifier Support:
+      Shift (Left/Right) - Uppercase and symbols
+      Caps Lock - Toggle letter case
+      Ctrl, Alt - Not yet implemented
+  - Unsupported keys silently ignored (F1-F12, etc.)
+
+Buffer Behavior:
+  - Circular buffer: 128 bytes
+  - On overflow: New characters dropped (buffer full)
+  - Thread-safe: Modified only in IRQ1 handler
+
+Notes:
+  - IRQ1 (keyboard interrupt) on vector 33
+  - Reads from port 0x60 (KBD_DATA_PORT)
+  - No echo - application must output received chars
+  - scnd_id validation enforced (must be 0)
+  - Used by TTY for input via cread(3, 0)
+  - 100% interrupt-driven, no polling
+
+BLOCK DEVICES
+================================================================================
+BLOCK DEVICES
+================================================================================
+
+--------------------------------------------------------------------------------
+Devices 0-3: IDE Hard Disks (hda, hdb, hdc, hdd)
+--------------------------------------------------------------------------------
+Type: Block Device
+File: driver/block/ide.c
+Registration: ide_register_driver()
+
+Description:
+  IDE/ATA disk driver supporting up to 4 disks on primary and secondary
+  IDE channels. Provides LBA28 addressing for reading and writing 512-byte
+  sectors. Auto-detects available disks during initialization.
+
+Device Mapping:
+  0 = hda (Primary Master)
+  1 = hdb (Primary Slave)
+  2 = hdc (Secondary Master)
+  3 = hdd (Secondary Slave)
+
+Operations:
+  read(prim_id, scnd_id, buf, count)
+    - Reads sector(s) from IDE disk
+    - Parameters:
+        prim_id: Disk ID (0-3)
+        scnd_id: LBA sector number (0 to disk size)
+        buf: Buffer to read into (must be 512 bytes)
+        count: Must be 512 (one sector)
+    - Return: 512 on success, -1 on error
+    - Note: Goes through cache layer (cache.c) for performance
+  
+  write(prim_id, scnd_id, buf, count)
+    - Writes sector(s) to IDE disk
+    - Parameters:
+        prim_id: Disk ID (0-3)
+        scnd_id: LBA sector number
+        buf: Data to write (must be 512 bytes)
+        count: Must be 512 (one sector)
+    - Return: 512 on success, -1 on error
+    - Note: Write-through cache (updates cache and writes to disk)
+  
+  ioctl(prim_id, scnd_id, command)
+    - NOT IMPLEMENTED (returns -1)
+    - Future: Could support commands like:
+        - Get disk geometry
+        - Flush cache
+        - Get/set transfer mode
+        - SMART status
+
+Notes:
+  - Uses PIO (Programmed I/O) mode, not DMA
+  - LBA28 addressing (max 128 GB per disk)
+  - 512-byte sector size
+  - All I/O goes through cache layer for performance
+  - Auto-detection via IDENTIFY command during init
+  - Read timing carefully tuned to work with different GRUB versions
+
+--------------------------------------------------------------------------------
+Devices 4-7: Partition Devices (hdaX, hdbX, hdcX, hddX)
+--------------------------------------------------------------------------------
+Type: Block Device
+File: driver/block/part_mbr.c
+Registration: mbr_init()
+
+Description:
+  MBR partition table parser that creates block devices for individual
+  partitions. Reads MBR from each disk and registers partition access.
+  Automatically translates partition-relative I/O to absolute disk sectors.
+
+Device Mapping:
+  4 = hdaX (hda partitions 1-4)
+  5 = hdbX (hdb partitions 1-4)  
+  6 = hdcX (hdc partitions 1-4)
+  7 = hddX (hdd partitions 1-4)
+
+Operations:
+  read(prim_id, scnd_id, buf, count)
+    - Reads from a partition
+    - Parameters:
+        prim_id: Partition device (4-7)
+        scnd_id: Partition number (1-4, NOT 0)
+        buf: Buffer to read into (512 bytes)
+        count: Must be 512
+    - Return: 512 on success, -1 on error/invalid partition
+    - Operation:
+        1. Validates partition exists and scnd_id is valid (1-4)
+        2. Calculates absolute LBA: partition_start + 0
+        3. Chains to underlying disk via bread()
+    - Example: read(4, 1, buf, 512) reads first sector of hda1
+  
+  write(prim_id, scnd_id, buf, count)
+    - Writes to a partition
+    - Parameters:
+        prim_id: Partition device (4-7)
+        scnd_id: Partition number (1-4)
+        buf: Data to write (512 bytes)
+        count: Must be 512
+    - Return: 512 on success, -1 on error
+    - Operation: Same as read, but uses bwrite() to underlying disk
+  
+  ioctl(prim_id, scnd_id, command)
+    - NOT IMPLEMENTED (returns -1)
+    - Future: Could support commands like:
+        - Get partition size
+        - Get partition type
+        - Get partition start LBA
+        - Check if partition is bootable
+
+Notes:
+  - Only supports MBR partition tables (not GPT)
+  - Supports up to 4 primary partitions per disk
+  - scnd_id=0 is INVALID (reserved, returns error)
+  - Partition types detected: FAT16, FAT32, NTFS, Linux, Linux Swap, Extended
+  - Automatically validates MBR signature (0xAA55)
+  - All I/O chains through cache layer via underlying disk
+
+================================================================================
+ABSTRACTION LAYER
+================================================================================
+
+File: driver/driver.c
+Header: include/driver.h
+
+Description:
+  Unified device driver abstraction providing consistent interface for both
+  character and block devices. Supports dynamic device registration with
+  kalloc-based linked lists.
+
+Public API Functions:
+
+  cread(prim_id, scnd_id)
+    - Read from character device
+    - Returns: character value or 0 on error
+  
+  cwrite(prim_id, scnd_id, char)
+    - Write to character device
+    - Returns: 0 on success, -1 on error
+  
+  bread(prim_id, scnd_id, buf, count)
+    - Read from block device
+    - Returns: bytes read or -1 on error
+    - Note: Automatically uses cache layer
+  
+  bwrite(prim_id, scnd_id, buf, count)
+    - Write to block device
+    - Returns: bytes written or -1 on error
+    - Note: Write-through cache
+  
+  ioctl(prim_id, scnd_id, command)
+    - Send control command to device (char or block)
+    - Returns: device-specific value or -1 on error/not supported
+    - Unified interface: tries char devices first, then block devices
+
+Device Registration:
+  - register_char_device(prim_id, ops)
+  - register_block_device(prim_id, ops)
+  
+Device ID Ranges:
+  - Character devices: 0-255
+  - Block devices: 0-255
+  - Separate namespaces (char 0 ≠ block 0)
+
+Cache Layer:
+  File: driver/block/cache.c
+  - LRU cache for block devices (32 entries, 512 bytes each)
+  - Automatic caching on bread()
+  - Write-through on bwrite()
+  - Significantly improves disk I/O performance
+
+================================================================================
+FUTURE ADDITIONS
+================================================================================
+
+When adding new drivers or functionality:
+
+1. Add device to appropriate section (Character or Block Devices)
+2. Document device number and type
+3. Describe each operation (read/write/ioctl) in detail
+4. Include parameter descriptions and return values
+5. Note any special behavior or limitations
+6. Update this file as part of driver implementation
+
+Example template:
+
+--------------------------------------------------------------------------------
+Device X: [Device Name]
+--------------------------------------------------------------------------------
+Type: [Character/Block] Device
+File: driver/[path]/[file].c
+Registration: [function_name]()
+
+Description:
+  [Detailed description of hardware/purpose]
+
+Operations:
+  read(...)
+    - [What it does]
+    - Parameters: [describe each]
+    - Return: [what and when]
+  
+  write(...)
+    - [What it does]
+    - Parameters: [describe each]
+    - Return: [what and when]
+  
+  ioctl(...)
+    - [What commands are supported]
+    - Command codes: [list with descriptions]
+    - Return: [what and when]
+
+Notes:
+  - [Important implementation details]
+  - [Limitations or special behaviors]
+
+================================================================================
+END OF DOCUMENTATION
+================================================================================

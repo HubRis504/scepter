@@ -333,11 +333,15 @@ void tty_puts(const char *str)
  * Driver Layer Integration
  * ========================================================================= */
 
+/* ioctl commands */
+#define TTY_IOCTL_CLEAR  0x1
+
 static char tty_read(int scnd_id)
 {
-    /* TTY doesn't support reading */
+    /* Forward read to keyboard driver (device 3) */
+    extern char cread(int, int);
     (void)scnd_id;
-    return 0;
+    return cread(3, 0);
 }
 
 static int tty_write(int scnd_id, char c)
@@ -347,11 +351,26 @@ static int tty_write(int scnd_id, char c)
     return 0;
 }
 
+static int tty_ioctl(int prim_id, int scnd_id, unsigned int command)
+{
+    (void)prim_id;
+    (void)scnd_id;
+    
+    switch (command) {
+        case TTY_IOCTL_CLEAR:
+            tty_clear();
+            return 0;
+        default:
+            return -1;  /* Unknown command */
+    }
+}
+
 int tty_register_driver(void)
 {
     char_ops_t ops = {
         .read = tty_read,
-        .write = tty_write
+        .write = tty_write,
+        .ioctl = tty_ioctl
     };
     return register_char_device(2, &ops);
 }

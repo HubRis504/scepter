@@ -29,6 +29,9 @@ typedef int (*char_write_fn)(int scnd_id, char c);
 typedef int (*block_read_fn)(int prim_id, int scnd_id, void *buf, size_t count);
 typedef int (*block_write_fn)(int prim_id, int scnd_id, const void *buf, size_t count);
 
+/* ioctl callback - unified for both char and block devices */
+typedef int (*ioctl_fn)(int prim_id, int scnd_id, unsigned int command);
+
 /* -------------------------------------------------------------------------
  * Device Operations Structures
  * ------------------------------------------------------------------------- */
@@ -36,11 +39,13 @@ typedef int (*block_write_fn)(int prim_id, int scnd_id, const void *buf, size_t 
 typedef struct {
     char_read_fn read;
     char_write_fn write;
+    ioctl_fn ioctl;
 } char_ops_t;
 
 typedef struct {
     block_read_fn read;
     block_write_fn write;
+    ioctl_fn ioctl;
 } block_ops_t;
 
 /* -------------------------------------------------------------------------
@@ -109,6 +114,16 @@ int bread(int prim_id, int scnd_id, void *buf, size_t count);
  * @return Number of bytes written, or -1 on error
  */
 int bwrite(int prim_id, int scnd_id, const void *buf, size_t count);
+
+/**
+ * Send ioctl command to a device (works for both char and block)
+ * 
+ * @param prim_id Primary device ID
+ * @param scnd_id Secondary device ID
+ * @param command Device-specific command code
+ * @return Device-specific return value, or -1 on error
+ */
+int ioctl(int prim_id, int scnd_id, unsigned int command);
 
 /**
  * Initialize the driver subsystem
