@@ -106,8 +106,12 @@ _start:
     orl   $0x80000000, %eax
     movl  %eax, %cr0
 
-    /* Far jump to higher-half code to flush pipeline */
-    ljmp  $0x08, $_start_higher
+    /* Jump to higher-half code (CS will be reset by kernel's gdt_init) */
+    subl %eax, %eax
+    movw %cs, %ax
+    pushl %eax
+    pushl $_start_higher
+    retf
 
 /* -----------------------------------------------------------------------
  * Now running at virtual 0xC0xxxxxx

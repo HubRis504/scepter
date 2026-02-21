@@ -94,14 +94,72 @@ $(TARGET): $(KERNEL_OBJS)
 	@ls -lh $@
 
 # ===========================================================================
+# GRUB Disk Management
+# ===========================================================================
+MOUNT_DIR = mnt
+
+init:
+	@echo "Creating clean GRUB disk image..."
+	sudo ./script/make_grub_disk.sh
+	@echo "Done! Use 'make mount' to mount the disk."
+
+mount:
+	@if [ ! -f disk.img ]; then \
+		echo "ERROR: disk.img not found. Run 'make init' first."; \
+		exit 1; \
+	fi
+	@echo "Mounting disk.img to ./$(MOUNT_DIR)..."
+	@mkdir -p $(MOUNT_DIR)
+	@sudo losetup -fP disk.img
+	@LOOP=$$(losetup -j disk.img | cut -d: -f1); \
+	sudo mount $${LOOP}p1 $(MOUNT_DIR); \
+	sudo chown -R $(USER):$(USER) $(MOUNT_DIR); \
+	echo "✓ Mounted at ./$(MOUNT_DIR) (owned by $(USER))"
+
+umount:
+	@echo "Unmounting ./$(MOUNT_DIR)..."
+	@if mountpoint -q $(MOUNT_DIR); then \
+		sudo umount $(MOUNT_DIR); \
+	fi
+	@LOOP=$$(losetup -j disk.img 2>/dev/null | cut -d: -f1); \
+	if [ -n "$$LOOP" ]; then \
+		sudo losetup -d $$LOOP; \
+	fi
+	@rmdir $(MOUNT_DIR) 2>/dev/null || true
+	@echo "✓ Unmounted"
+
+# ===========================================================================
 # Run and Debug
 # ===========================================================================
 run: $(TARGET)
-	qemu-system-i386 -m 128 -kernel $(TARGET) -drive file=disk.img,format=raw,if=ide,index=0,media=disk
+	@if [ ! -f disk.img ]; then \
+		echo "ERROR: disk.img not found. Run 'make init' first."; \
+		exit 1; \
+	fi
+	@if ! mountpoint -q $(MOUNT_DIR); then \
+		echo "Mounting disk..."; \
+		$(MAKE) mount; \
+	fi
+	@echo "Copying kernel to disk..."
+	@cp $(TARGET) $(MOUNT_DIR)/boot/kernel.elf
+	@sync
+	@echo "Unmounting disk..."
+	@$(MAKE) umount
+	@echo "Starting QEMU..."
+	qemu-system-i386 -m 128 -drive file=disk.img,format=raw,if=ide,index=0,media=disk
 
 debug: $(TARGET)
-	qemu-system-i386 -m 4096 -kernel $(TARGET) -s -S -hda disk.img &
-	gdb -ex "target remote :1234" -ex "symbol-file $(TARGET)"
+	@if [ ! -f disk.img ]; then \
+		echo "ERROR: disk.img not found. Run 'make init' first."; \
+		exit 1; \
+	fi
+	@if ! mountpoint -q $(MOUNT_DIR); then \
+		$(MAKE) mount; \
+	fi
+	@cp $(TARGET) $(MOUNT_DIR)/boot/kernel.elf
+	@sync
+	@$(MAKE) umount
+	bochs
 
 clean:
 	rm -rf $(BUILD)
