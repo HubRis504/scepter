@@ -4,7 +4,6 @@
 #include "slab.h"
 #include "printk.h"
 #include "part_mbr.h"
-#include "ide.h"
 #include <stdint.h>
 #include <stddef.h>
 
@@ -68,11 +67,11 @@ typedef struct {
  * ========================================================================= */
 
 /* Read a sector from the partition 
- * Uses partition info to get lba_start, then reads via IDE directly
+ * Uses bread() abstraction - partition layer handles LBA translation
  */
 static int read_sector(int dev_id, int part_id, uint32_t sector, void *buf)
 {
-    /* Get partition information */
+    /* Get partition information to access underlying disk */
     const partition_info_t *part = mbr_get_partition_info(dev_id, part_id);
     if (!part) {
         return -1;
@@ -81,12 +80,26 @@ static int read_sector(int dev_id, int part_id, uint32_t sector, void *buf)
     /* Calculate absolute LBA: partition start + sector offset */
     uint32_t absolute_lba = part->lba_start + sector;
     
-    /* Read directly from IDE using disk_id */
-    if (ide_read_sectors(part->disk_id, absolute_lba, 1, buf) != 0) {
+    /* Use bread() on the disk device (proper abstraction) */
+    return bread(part->disk_id, absolute_lba, buf, 512);
+}
+
+/* Write a sector to the partition 
+ * Uses bwrite() abstraction - partition layer handles LBA translation
+ */
+static int write_sector(int dev_id, int part_id, uint32_t sector, const void *buf)
+{
+    /* Get partition information to access underlying disk */
+    const partition_info_t *part = mbr_get_partition_info(dev_id, part_id);
+    if (!part) {
         return -1;
     }
     
-    return 512;
+    /* Calculate absolute LBA: partition start + sector offset */
+    uint32_t absolute_lba = part->lba_start + sector;
+    
+    /* Use bwrite() on the disk device (proper abstraction) */
+    return bwrite(part->disk_id, absolute_lba, buf, 512);
 }
 
 /* Get cluster number from directory entry */
@@ -159,6 +172,28 @@ static int read_cluster(fat32_mount_t *mount, uint32_t cluster, void *buf)
         if (read_sector(mount->device_id, mount->partition_id, 
                        first_sector + i, 
                        (uint8_t *)buf + (i * 512)) < 0) {
+            return -1;
+        }
+    }
+    
+    return mount->bytes_per_cluster;
+}
+
+/* Write a cluster */
+static int write_cluster(fat32_mount_t *mount, uint32_t cluster, const void *buf)
+{
+    if (cluster < 2) {
+        return -1;  /* Invalid cluster */
+    }
+    
+    uint32_t first_sector = mount->data_start_sector + 
+                           ((cluster - 2) * mount->boot.sectors_per_cluster);
+    
+    /* Write all sectors in cluster */
+    for (int i = 0; i < mount->boot.sectors_per_cluster; i++) {
+        if (write_sector(mount->device_id, mount->partition_id, 
+                        first_sector + i, 
+                        (const uint8_t *)buf + (i * 512)) < 0) {
             return -1;
         }
     }
@@ -426,11 +461,65 @@ static int fat32_read(void *file_private, void *buf, size_t count)
 
 static int fat32_write(void *file_private, const void *buf, size_t count)
 {
-    /* Not implemented yet */
-    (void)file_private;
-    (void)buf;
-    (void)count;
-    return -1;
+    fat32_file_t *file = (fat32_file_t *)file_private;
+    
+    if (!file || !buf) {
+        return -1;
+    }
+    
+    /* Phase 1: In-place write only - don't extend file */
+    if (file->position >= file->file_size) {
+        return 0;  /* At or past EOF */
+    }
+    
+    /* Limit write to current file size (no extension) */
+    if (file->position + count > file->file_size) {
+        count = file->file_size - file->position;
+        if (count == 0) return 0;
+    }
+    
+    static uint8_t cluster_buf[32768];
+    size_t bytes_written = 0;
+    
+    while (bytes_written < count) {
+        /* Read current cluster (for partial writes) */
+        if (read_cluster(file->mount, file->current_cluster, cluster_buf) < 0) {
+            return -1;
+        }
+        
+        /* Calculate how much to write to this cluster */
+        uint32_t bytes_in_cluster = file->mount->bytes_per_cluster - file->cluster_offset;
+        uint32_t to_write = count - bytes_written;
+        if (to_write > bytes_in_cluster) {
+            to_write = bytes_in_cluster;
+        }
+        
+        /* Modify cluster data */
+        for (uint32_t i = 0; i < to_write; i++) {
+            cluster_buf[file->cluster_offset + i] = ((const uint8_t *)buf)[bytes_written + i];
+        }
+        
+        /* Write modified cluster back */
+        if (write_cluster(file->mount, file->current_cluster, cluster_buf) < 0) {
+            return bytes_written > 0 ? bytes_written : -1;
+        }
+        
+        bytes_written += to_write;
+        file->position += to_write;
+        file->cluster_offset += to_write;
+        
+        /* Move to next cluster if needed */
+        if (file->cluster_offset >= file->mount->bytes_per_cluster) {
+            file->current_cluster = read_fat_entry(file->mount, file->current_cluster);
+            file->cluster_offset = 0;
+            
+            if (file->current_cluster >= FAT32_EOC) {
+                break;  /* EOF */
+            }
+        }
+    }
+    
+    return bytes_written;
 }
 
 /* =========================================================================
