@@ -1,7 +1,7 @@
-#include "kbd.h"
-#include "driver.h"
-#include "pic.h"
-#include "cpu.h"
+#include "driver/char/kbd.h"
+#include "driver/driver.h"
+#include "driver/pic.h"
+#include "kernel/cpu.h"
 #include "asm.h"
 
 /* =========================================================================

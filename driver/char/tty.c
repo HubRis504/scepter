@@ -1,6 +1,6 @@
-#include "tty.h"
-#include "vga.h"
-#include "driver.h"
+#include "driver/char/tty.h"
+#include "driver/char/vga.h"
+#include "driver/driver.h"
 #include <stdint.h>
 
 /* =========================================================================

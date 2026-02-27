@@ -1,5 +1,5 @@
-#include "panic.h"
-#include "printk.h"
+#include "kernel/panic.h"
+#include "lib/printk.h"
 #include "asm.h"
 #include <stdint.h>
 

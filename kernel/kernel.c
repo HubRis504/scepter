@@ -1,17 +1,17 @@
-#include "cpu.h"
-#include "vga.h"
-#include "tty.h"
-#include "printk.h"
-#include "pic.h"
-#include "pit.h"
-#include "buddy.h"
-#include "slab.h"
-#include "driver.h"
-#include "cache.h"
-#include "kbd.h"
-#include "ide.h"
-#include "part_mbr.h"
-#include "fs.h"
+#include "kernel/cpu.h"
+#include "driver/char/vga.h"
+#include "driver/char/tty.h"
+#include "lib/printk.h"
+#include "driver/pic.h"
+#include "driver/char/pit.h"
+#include "mm/buddy.h"
+#include "mm/slab.h"
+#include "driver/driver.h"
+#include "driver/block/cache.h"
+#include "driver/char/kbd.h"
+#include "driver/block/ide.h"
+#include "driver/block/part_mbr.h"
+#include "fs/fs.h"
 #include "asm.h"
 
 /* =========================================================================
@@ -164,6 +164,14 @@ void kernel_main(void)
     vfs_init();
     
     printk("\nKernel initialization complete.\n\n");
+
+    char buf[512];
+    for(int i=0;i<512;i++){
+       buf[i] = i;
+    }
+
+    printk("%d\n", bwrite(4, 1, buf, 512));
+    cache_flush();
     
     /* Enable interrupts after all initialization is complete */
     sti();

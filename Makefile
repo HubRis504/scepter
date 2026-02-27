@@ -4,7 +4,7 @@ LD      = i686-linux-gnu-ld
 OBJCOPY = i686-linux-gnu-objcopy
 
 CFLAGS  = -c -ffreestanding -nostdlib -fno-builtin -fno-stack-protector \
-          -fno-pie -mno-red-zone -O2 -Wall -Wextra -I include -I kernel \
+          -fno-pie -mno-red-zone -O100 -Wall -Wextra -I include -I kernel \
           -fno-pic -m32
 LIBGCC  = $(shell i686-linux-gnu-gcc -print-libgcc-file-name)
 LDFLAGS = -T linker.ld -nostdlib -Map=kernel.sym
@@ -16,6 +16,7 @@ KERNEL_OBJS = $(BUILD)/boot.o \
               $(BUILD)/kernel.o \
               $(BUILD)/cpu.o \
               $(BUILD)/printk.o \
+              $(BUILD)/string.o \
               $(BUILD)/vga.o \
               $(BUILD)/pic.o \
               $(BUILD)/isr.o \
@@ -47,52 +48,55 @@ $(BUILD)/boot.o: kernel/boot.s
 $(BUILD)/kernel.o: kernel/kernel.c
 	$(CC) $(CFLAGS) kernel/kernel.c -o $@
 
-$(BUILD)/cpu.o: kernel/cpu.c include/cpu.h kernel/asm.h
+$(BUILD)/cpu.o: kernel/cpu.c include/kernel/cpu.h kernel/asm.h
 	$(CC) $(CFLAGS) kernel/cpu.c -o $@
 
-$(BUILD)/printk.o: kernel/printk.c include/printk.h include/vga.h
-	$(CC) $(CFLAGS) kernel/printk.c -o $@
+$(BUILD)/printk.o: lib/printk.c include/lib/printk.h include/driver/char/vga.h
+	$(CC) $(CFLAGS) lib/printk.c -o $@
 
-$(BUILD)/vga.o: driver/char/vga.c include/vga.h kernel/asm.h
+$(BUILD)/string.o: lib/string.c include/lib/string.h
+	$(CC) $(CFLAGS) lib/string.c -o $@
+
+$(BUILD)/vga.o: driver/char/vga.c include/driver/char/vga.h kernel/asm.h
 	$(CC) $(CFLAGS) driver/char/vga.c -o $@
 
-$(BUILD)/driver.o: driver/driver.c include/driver.h include/slab.h
+$(BUILD)/driver.o: driver/driver.c include/driver/driver.h include/mm/slab.h
 	$(CC) $(CFLAGS) driver/driver.c -o $@
 
-$(BUILD)/tty.o: driver/char/tty.c include/tty.h include/vga.h include/driver.h
+$(BUILD)/tty.o: driver/char/tty.c include/driver/char/tty.h include/driver/char/vga.h include/driver/driver.h
 	$(CC) $(CFLAGS) driver/char/tty.c -o $@
 
-$(BUILD)/kbd.o: driver/char/kbd.c include/kbd.h include/driver.h include/pic.h include/cpu.h kernel/asm.h
+$(BUILD)/kbd.o: driver/char/kbd.c include/driver/char/kbd.h include/driver/driver.h include/driver/pic.h include/kernel/cpu.h kernel/asm.h
 	$(CC) $(CFLAGS) driver/char/kbd.c -o $@
 
-$(BUILD)/pic.o: driver/pic.c include/pic.h kernel/asm.h
+$(BUILD)/pic.o: driver/pic.c include/driver/pic.h kernel/asm.h
 	$(CC) $(CFLAGS) driver/pic.c -o $@
 
 $(BUILD)/isr.o: kernel/isr.s
 	$(AS) kernel/isr.s -o $@
 
-$(BUILD)/panic.o: kernel/panic.c include/panic.h include/printk.h kernel/asm.h
+$(BUILD)/panic.o: kernel/panic.c include/kernel/panic.h include/lib/printk.h kernel/asm.h
 	$(CC) $(CFLAGS) kernel/panic.c -o $@
 
-$(BUILD)/pit.o: driver/char/pit.c include/pit.h include/pic.h include/cpu.h include/driver.h kernel/asm.h
+$(BUILD)/pit.o: driver/char/pit.c include/driver/char/pit.h include/driver/pic.h include/kernel/cpu.h include/driver/driver.h kernel/asm.h
 	$(CC) $(CFLAGS) driver/char/pit.c -o $@
 
-$(BUILD)/buddy.o: mm/buddy.c include/buddy.h include/printk.h
+$(BUILD)/buddy.o: mm/buddy.c include/mm/buddy.h include/lib/printk.h
 	$(CC) $(CFLAGS) mm/buddy.c -o $@
 
-$(BUILD)/slab.o: mm/slab.c include/slab.h include/buddy.h include/printk.h
+$(BUILD)/slab.o: mm/slab.c include/mm/slab.h include/mm/buddy.h include/lib/printk.h
 	$(CC) $(CFLAGS) mm/slab.c -o $@
 
-$(BUILD)/ide.o: driver/block/ide.c include/ide.h kernel/asm.h include/printk.h
+$(BUILD)/ide.o: driver/block/ide.c include/driver/block/ide.h kernel/asm.h include/lib/printk.h
 	$(CC) $(CFLAGS) driver/block/ide.c -o $@
 
-$(BUILD)/cache.o: driver/block/cache.c include/cache.h include/driver.h include/slab.h include/printk.h
+$(BUILD)/cache.o: driver/block/cache.c include/driver/block/cache.h include/driver/driver.h include/mm/slab.h include/lib/printk.h
 	$(CC) $(CFLAGS) driver/block/cache.c -o $@
 
-$(BUILD)/part_mbr.o: driver/block/part_mbr.c include/part_mbr.h include/driver.h include/ide.h include/printk.h
+$(BUILD)/part_mbr.o: driver/block/part_mbr.c include/driver/block/part_mbr.h include/driver/driver.h include/driver/block/ide.h include/lib/printk.h
 	$(CC) $(CFLAGS) driver/block/part_mbr.c -o $@
 
-$(BUILD)/vfs.o: fs/vfs.c include/fs.h include/slab.h include/printk.h
+$(BUILD)/vfs.o: fs/vfs.c include/fs/fs.h include/mm/slab.h include/lib/printk.h
 	$(CC) $(CFLAGS) fs/vfs.c -o $@
 
 # Link kernel as ELF (Multiboot compatible)

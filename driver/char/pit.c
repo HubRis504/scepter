@@ -1,8 +1,8 @@
-#include "pit.h"
-#include "pic.h"
-#include "cpu.h"
+#include "driver/char/pit.h"
+#include "driver/pic.h"
+#include "kernel/cpu.h"
 #include "printk.h"
-#include "driver.h"
+#include "driver/driver.h"
 #include "asm.h"
 
 /* =========================================================================

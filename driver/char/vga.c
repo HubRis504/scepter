@@ -1,4 +1,4 @@
-#include "vga.h"
+#include "driver/char/vga.h"
 #include "driver.h"
 #include "asm.h"
 

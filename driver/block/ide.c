@@ -1,7 +1,7 @@
-#include "ide.h"
+#include "driver/block/ide.h"
 #include "driver.h"
 #include "asm.h"
-#include "printk.h"
+#include "lib/printk.h"
 #include <stddef.h>
 
 /* =========================================================================

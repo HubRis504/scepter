@@ -1,7 +1,7 @@
-#include "part_mbr.h"
-#include "driver.h"
-#include "ide.h"
-#include "printk.h"
+#include "driver/block/part_mbr.h"
+#include "driver/driver.h"
+#include "driver/block/ide.h"
+#include "lib/printk.h"
 #include <stddef.h>
 
 /* =========================================================================

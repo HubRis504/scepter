@@ -1,46 +1,9 @@
-#include "fs.h"
-#include "slab.h"
-#include "printk.h"
+#include "fs/fs.h"
+#include "mm/slab.h"
+#include "lib/printk.h"
+#include "lib/string.h"
 #include <stdint.h>
 #include <stddef.h>
-
-/* =========================================================================
- * String utilities (minimal, no libc)
- * ========================================================================= */
-
-static size_t strlen(const char *s)
-{
-    size_t len = 0;
-    while (s[len]) len++;
-    return len;
-}
-
-static int strcmp(const char *s1, const char *s2)
-{
-    while (*s1 && (*s1 == *s2)) {
-        s1++;
-        s2++;
-    }
-    return *(unsigned char *)s1 - *(unsigned char *)s2;
-}
-
-static char *strcpy(char *dst, const char *src)
-{
-    char *ret = dst;
-    while ((*dst++ = *src++));
-    return ret;
-}
-
-static int strncmp(const char *s1, const char *s2, size_t n)
-{
-    while (n && *s1 && (*s1 == *s2)) {
-        s1++;
-        s2++;
-        n--;
-    }
-    if (n == 0) return 0;
-    return *(unsigned char *)s1 - *(unsigned char *)s2;
-}
 
 /* =========================================================================
  * Internal Structures

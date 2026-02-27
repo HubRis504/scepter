@@ -1,6 +1,6 @@
-#include "driver.h"
+#include "driver/driver.h"
 #include "cache.h"
-#include "slab.h"
+#include "mm/slab.h"
 #include <stdint.h>
 #include <stddef.h>
 

@@ -1,5 +1,5 @@
-#include "buddy.h"
-#include "printk.h"
+#include "mm/buddy.h"
+#include "lib/printk.h"
 #include <stdint.h>
 #include <stddef.h>
 

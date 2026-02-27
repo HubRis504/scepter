@@ -1,7 +1,7 @@
-#include "cache.h"
-#include "driver.h"
-#include "slab.h"
-#include "printk.h"
+#include "driver/block/cache.h"
+#include "driver/driver.h"
+#include "mm/slab.h"
+#include "lib/printk.h"
 #include <stdint.h>
 #include <stddef.h>
 
