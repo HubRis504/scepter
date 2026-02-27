@@ -12,7 +12,6 @@
 #include "ide.h"
 #include "part_mbr.h"
 #include "fs.h"
-#include "fat32.h"
 #include "asm.h"
 
 /* =========================================================================
@@ -73,8 +72,6 @@ void kernel_main(void)
     
     /* Initialize VGA hardware and clear screen FIRST */
     vga_init();
-
-    printk("Scepter i386 Kernel\n\n");
 
     /* ------------------------------------------------------------------
      * Detect memory size via CMOS
@@ -165,41 +162,6 @@ void kernel_main(void)
     
     /* Initialize VFS */
     vfs_init();
-    
-    /* Register FAT32 filesystem */
-    fs_ops_t fat32_ops;
-    fat32_get_ops(&fat32_ops);
-    register_filesystem("fat32", &fat32_ops);
-    
-    /* Mount hda1 (device 4, partition 1) as FAT32 at root */
-    printk("\n");
-    if (fs_mount(4, 1, "fat32", "/") == 0) {
-        /* Test: Write to /etc/conf */
-        int fd = fs_open("/etc/conf", O_RDWR);
-        if (fd >= 0) {
-            /* Write test data */
-            const char *test_data = "HELLO WORLD FROM KERNEL!\n";
-            int written = fs_write(fd, test_data, 25);
-            printk("\n[WRITE TEST] Wrote %d bytes to /etc/conf\n", written);
-            printk("[WRITE TEST] (bwrite is write-through, data written directly to disk)\n");
-            fs_close(fd);
-            
-            /* Verify by reading back */
-            fd = fs_open("/etc/conf", O_RDONLY);
-            if (fd >= 0) {
-                char buf[512];
-                int n = fs_read(fd, buf, sizeof(buf) - 1);
-                if (n > 0) {
-                    buf[n] = '\0';
-                    printk("[WRITE TEST] Verification read:\n");
-                    printk("--- BEGIN ---\n");
-                    printk("%s", buf);
-                    printk("--- END ---\n");
-                }
-                fs_close(fd);
-            }
-        }
-    }
     
     printk("\nKernel initialization complete.\n\n");
     

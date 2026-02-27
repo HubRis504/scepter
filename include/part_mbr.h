@@ -22,6 +22,7 @@
 #define PART_TYPE_FAT16_LBA     0x0E
 #define PART_TYPE_NTFS          0x07
 #define PART_TYPE_FAT32_LBA     0x0C
+#define PART_TYPE_MINIX         0x81
 #define PART_TYPE_LINUX         0x83
 #define PART_TYPE_LINUX_SWAP    0x82
 #define PART_TYPE_EXTENDED      0x05

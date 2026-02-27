@@ -73,6 +73,7 @@ static const char *mbr_get_type_name(uint8_t type)
         case PART_TYPE_FAT16_LBA:   return "FAT16-LBA";
         case PART_TYPE_FAT32_LBA:   return "FAT32-LBA";
         case PART_TYPE_NTFS:        return "NTFS";
+        case PART_TYPE_MINIX:       return "Minix";
         case PART_TYPE_LINUX:       return "Linux";
         case PART_TYPE_LINUX_SWAP:  return "Linux Swap";
         case PART_TYPE_EXTENDED:    return "Extended";
