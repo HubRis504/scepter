@@ -15,6 +15,7 @@
 #include "driver/block/cache.h"
 #include "fs/fs.h"
 #include "fs/devfs.h"
+#include "lib/string.h"
 #include "asm.h"
 
 /* =========================================================================
@@ -141,14 +142,6 @@ void kernel_main(void)
     devfs_init();   /* mount devfs at /dev */
 
     printk("\nKernel initialization complete.\n\n");
-
-    /* Quick sanity-check: read the last byte of the first IDE sector */
-    int fd = fs_open("/dev/hda", 1);
-    if (fd >= 0) {
-        char buf[512];
-        fs_read(fd, buf, 512);
-        printk("[TEST] hda sector 0 byte 511 = 0x%02x\n", (unsigned char)buf[511]);
-    }
 
     sti();
     while (1);

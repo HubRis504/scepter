@@ -33,7 +33,7 @@ KERNEL_OBJS = $(BUILD)/boot.o \
               $(BUILD)/cache.o \
               $(BUILD)/part_mbr.o \
               $(BUILD)/vfs.o \
-              $(BUILD)/devfs.o \
+              $(BUILD)/devfs.o
 
 .PHONY: all clean run debug
 
@@ -158,6 +158,31 @@ umount:
 	@rmdir $(MOUNT_DIR) 2>/dev/null || true
 	@echo "✓ Unmounted"
 
+mountd:
+	@if [ ! -f data.img ]; then \
+		echo "ERROR: data.img not found. Run 'make init' first."; \
+		exit 1; \
+	fi
+	@echo "Mounting data.img to ./$(MOUNT_DIR)..."
+	@mkdir -p $(MOUNT_DIR)
+	@sudo losetup -fP data.img
+	@LOOP=$$(losetup -j data.img | cut -d: -f1); \
+	sudo mount $${LOOP}p1 $(MOUNT_DIR); \
+	sudo chown -R $(USER):$(USER) $(MOUNT_DIR); \
+	echo "✓ Mounted at ./$(MOUNT_DIR) (owned by $(USER))"
+
+umountd:
+	@echo "Unmounting ./$(MOUNT_DIR)..."
+	@if mountpoint -q $(MOUNT_DIR); then \
+		sudo umount $(MOUNT_DIR); \
+	fi
+	@LOOP=$$(losetup -j data.img 2>/dev/null | cut -d: -f1); \
+	if [ -n "$$LOOP" ]; then \
+		sudo losetup -d $$LOOP; \
+	fi
+	@rmdir $(MOUNT_DIR) 2>/dev/null || true
+	@echo "✓ Unmounted"
+
 # ===========================================================================
 # Run and Debug
 # ===========================================================================
@@ -193,5 +218,5 @@ debug: $(TARGET)
 
 clean:
 	rm -rf $(BUILD)
-	rm *.img
-	rm *.sym
+	rm -f *.img
+	rm -f *.sym
